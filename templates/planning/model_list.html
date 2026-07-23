@@ -1,0 +1,459 @@
+{% extends "base.html" %}
+
+{% block title %}Models Catalog — MTE Hr×Hr{% endblock %}
+{% block page_title %}Models Catalog{% endblock %}
+
+{% block header_actions %}
+<span class="text-xs text-gray-400 mono bg-gray-100 px-3 py-1.5 rounded-lg">
+  {{ total }} model{{ total|pluralize }} in DB
+</span>
+{% endblock %}
+
+{% block content %}
+<div class="flex gap-5 items-start">
+
+  <!-- LEFT PANEL: Upload CSV -->
+  <div class="w-72 flex-shrink-0">
+    <div class="bg-white rounded-xl border border-gray-200 shadow-sm p-5 sticky top-4 space-y-5">
+
+      <div>
+        <p class="text-sm font-semibold text-gray-700 mb-1 flex items-center gap-2">
+          <i class="fas fa-file-csv text-green-500"></i> Upload CSV
+        </p>
+        <p class="text-xs text-gray-400 mb-4">
+          One model per row &middot; first column &middot; no header row.
+        </p>
+
+        <form method="post" enctype="multipart/form-data" id="upload-form">
+          {% csrf_token %}
+
+          <label for="csv_file" id="drop-zone"
+                 class="flex flex-col items-center justify-center gap-2 border-2 border-dashed
+                        border-gray-300 hover:border-blue-400 rounded-xl p-6 cursor-pointer
+                        transition-colors bg-gray-50 hover:bg-blue-50 text-center">
+            <i class="fas fa-cloud-arrow-up text-2xl text-gray-400" id="dz-icon"></i>
+            <span class="text-xs font-semibold text-gray-500" id="dz-label">Click or drag a .csv file here</span>
+            <span class="text-[10px] text-gray-400" id="dz-hint">max 5 MB</span>
+            <input type="file" name="csv_file" id="csv_file" accept=".csv" class="hidden" required>
+          </label>
+
+          <button type="submit" id="upload-btn" disabled
+                  class="mt-3 w-full bg-green-600 hover:bg-green-700 disabled:opacity-40
+                         text-white text-sm font-semibold py-2.5 rounded-lg transition
+                         flex items-center justify-center gap-2">
+            <i class="fas fa-upload text-xs"></i> Upload &amp; Import
+          </button>
+        </form>
+      </div>
+
+      <!-- Format hint -->
+      <div class="rounded-lg bg-amber-50 border border-amber-100 p-3">
+        <p class="text-xs font-semibold text-amber-700 mb-1.5 flex items-center gap-1.5">
+          <i class="fas fa-triangle-exclamation text-[10px]"></i> Expected format
+        </p>
+        <div class="bg-white rounded border border-amber-100 overflow-hidden">
+          <table class="w-full text-xs">
+            <thead>
+              <tr class="bg-amber-50">
+                <th class="px-2 py-1 text-left text-amber-600 font-semibold">A</th>
+                <th class="px-2 py-1 text-left text-gray-300 font-normal">(ignored)</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-50">
+              <tr><td class="px-2 py-1 font-mono text-gray-700">MODEL-A1</td><td class="px-2 py-1 text-gray-300">...</td></tr>
+              <tr><td class="px-2 py-1 font-mono text-gray-700">MODEL-B2</td><td class="px-2 py-1 text-gray-300">...</td></tr>
+              <tr><td class="px-2 py-1 font-mono text-gray-700">MODEL-C3</td><td class="px-2 py-1 text-gray-300">...</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="text-[10px] text-amber-600 mt-1.5">Row 1 = first model (no header). Only column A is read.</p>
+      </div>
+
+      <!-- Stats -->
+      <div class="pt-3 border-t border-gray-100 space-y-2">
+        <div class="flex items-center justify-between text-xs">
+          <span class="text-gray-500">Total models</span>
+          <span class="font-bold mono text-gray-800">{{ total }}</span>
+        </div>
+        {% if search %}
+        <div class="flex items-center justify-between text-xs">
+          <span class="text-gray-500">Matching search</span>
+          <span class="font-bold mono text-blue-700">{{ models_qs|length }}</span>
+        </div>
+        {% endif %}
+      </div>
+
+    </div>
+  </div>
+  <!-- /LEFT PANEL -->
+
+  <!-- RIGHT PANEL: Table -->
+  <div class="flex-1 min-w-0">
+
+    <!-- Search bar -->
+    <form method="get" id="search-form" class="mb-4">
+      <div class="flex gap-2">
+        <div class="relative flex-1">
+          <i class="fas fa-magnifying-glass absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-xs"></i>
+          <input type="text" name="q" value="{{ search }}" id="search-input"
+                 placeholder="Search models..."
+                 autocomplete="off"
+                 class="w-full pl-8 pr-4 py-2 text-sm rounded-lg border border-gray-300 shadow-sm
+                        focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none">
+        </div>
+        {% if search %}
+        <a href="{% url 'planning:model_list' %}"
+           class="inline-flex items-center gap-1.5 text-xs font-semibold text-gray-500
+                  hover:text-gray-800 border border-gray-200 px-3 py-2 rounded-lg transition">
+          <i class="fas fa-xmark"></i> Clear
+        </a>
+        {% endif %}
+      </div>
+    </form>
+
+    <!-- Table card -->
+    <div class="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+
+      <div class="flex items-center justify-between px-5 py-3 border-b border-gray-100 bg-gray-50">
+        <p class="text-sm font-semibold text-gray-700">
+          {% if search %}
+            Results for "<span class="text-blue-600">{{ search }}</span>"
+          {% else %}
+            All Models
+          {% endif %}
+        </p>
+        <p class="text-xs text-gray-400 mono">{{ models_qs|length }} model{{ models_qs|length|pluralize }}</p>
+      </div>
+
+      {% if models_qs %}
+      <div class="overflow-x-auto">
+        <table class="min-w-full text-sm" id="models-table">
+          <thead>
+            <tr class="border-b border-gray-100">
+              <th class="px-5 py-3 text-left text-xs font-semibold text-gray-400 uppercase tracking-wide w-10">#</th>
+              <th class="px-5 py-3 text-left text-xs font-semibold text-gray-400 uppercase tracking-wide">Model Name</th>
+              <th class="px-5 py-3 text-center text-xs font-semibold text-gray-400 uppercase tracking-wide w-36">Used in Plans</th>
+              <th class="px-5 py-3 text-right text-xs font-semibold text-gray-400 uppercase tracking-wide w-24"></th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-gray-50" id="models-tbody">
+            {% for m in models_qs %}
+            <tr class="hover:bg-gray-50 transition-colors group" id="row-{{ m.id }}">
+              <td class="px-5 py-3 text-xs text-gray-400 mono">{{ forloop.counter }}</td>
+              <td class="px-5 py-3">
+                <span class="inline-flex items-center gap-2 font-semibold text-gray-800">
+                  <span class="w-2 h-2 rounded-full bg-blue-400 flex-shrink-0"></span>
+                  {{ m.name }}
+                </span>
+              </td>
+              <td class="px-5 py-3 text-center">
+                {% if m.hourly_count > 0 %}
+                <span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs
+                             font-semibold bg-indigo-50 text-indigo-700 border border-indigo-100 mono">
+                  <i class="fas fa-link text-[9px]"></i> {{ m.hourly_count }}
+                </span>
+                {% else %}
+                <span class="text-xs text-gray-300 mono">--</span>
+                {% endif %}
+              </td>
+              <td class="px-5 py-3 text-right">
+                <button type="button"
+                        class="delete-btn opacity-0 group-hover:opacity-100 transition
+                               inline-flex items-center gap-1.5 text-xs font-semibold
+                               text-red-400 hover:text-red-600 hover:bg-red-50
+                               px-2.5 py-1 rounded-lg border border-transparent hover:border-red-100"
+                        data-id="{{ m.id }}"
+                        data-name="{{ m.name }}"
+                        data-count="{{ m.hourly_count }}"
+                        data-url="{% url 'planning:model_delete' m.id %}">
+                  <i class="fas fa-trash text-[10px]"></i> Delete
+                </button>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+
+      {% else %}
+      <div class="flex flex-col items-center py-20 text-center">
+        <div class="w-14 h-14 rounded-full bg-gray-100 flex items-center justify-center mb-4">
+          {% if search %}
+          <i class="fas fa-magnifying-glass text-gray-300 text-xl"></i>
+          {% else %}
+          <i class="fas fa-cubes text-gray-300 text-xl"></i>
+          {% endif %}
+        </div>
+        {% if search %}
+        <p class="text-sm text-gray-400">No models match "<strong>{{ search }}</strong>".</p>
+        <a href="{% url 'planning:model_list' %}" class="mt-2 text-sm text-blue-600 hover:underline">Clear search</a>
+        {% else %}
+        <p class="text-sm text-gray-400">No models yet.</p>
+        <p class="text-xs text-gray-300 mt-1">Upload a CSV file to get started.</p>
+        {% endif %}
+      </div>
+      {% endif %}
+
+    </div>
+  </div>
+  <!-- /RIGHT PANEL -->
+
+</div>
+
+<!-- DELETE MODAL -->
+<div id="delete-modal"
+     class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm hidden">
+  <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md mx-4 overflow-hidden">
+
+    <div id="modal-header-ok"
+         class="flex items-center gap-3 px-6 py-4 bg-red-50 border-b border-red-100">
+      <div class="w-9 h-9 rounded-full bg-red-100 flex items-center justify-center flex-shrink-0">
+        <i class="fas fa-trash text-red-500 text-sm"></i>
+      </div>
+      <div>
+        <p class="text-sm font-bold text-red-800">Delete Model</p>
+        <p class="text-xs text-red-500">This model is not linked to any plans.</p>
+      </div>
+    </div>
+
+    <div id="modal-header-blocked"
+         class="hidden flex items-center gap-3 px-6 py-4 bg-amber-50 border-b border-amber-100">
+      <div class="w-9 h-9 rounded-full bg-amber-100 flex items-center justify-center flex-shrink-0">
+        <i class="fas fa-triangle-exclamation text-amber-500 text-sm"></i>
+      </div>
+      <div>
+        <p class="text-sm font-bold text-amber-800">Cannot Delete</p>
+        <p class="text-xs text-amber-600">This model is used in active plans.</p>
+      </div>
+    </div>
+
+    <div class="px-6 py-5">
+      <div id="modal-body-ok">
+        <p class="text-sm text-gray-600">
+          Are you sure you want to delete
+          <strong class="text-gray-900" id="modal-model-name"></strong>?
+        </p>
+        <p class="text-xs text-gray-400 mt-1">This action cannot be undone.</p>
+      </div>
+
+      <div id="modal-body-blocked" class="hidden">
+        <p class="text-sm text-gray-600 mb-3">
+          <strong class="text-gray-900" id="modal-model-name-blocked"></strong>
+          is linked to the following daily plans and cannot be deleted:
+        </p>
+        <div class="rounded-xl border border-amber-100 overflow-hidden">
+          <table class="min-w-full text-xs">
+            <thead>
+              <tr class="bg-amber-50 border-b border-amber-100">
+                <th class="px-3 py-2 text-left font-semibold text-amber-700 uppercase tracking-wide">Date</th>
+                <th class="px-3 py-2 text-left font-semibold text-amber-700 uppercase tracking-wide">Work Center</th>
+                <th class="px-3 py-2 text-left font-semibold text-amber-700 uppercase tracking-wide">Subprocess</th>
+              </tr>
+            </thead>
+            <tbody id="blocking-plans-tbody" class="divide-y divide-amber-50 bg-white"></tbody>
+          </table>
+        </div>
+        <p class="text-xs text-gray-400 mt-3">Remove this model from those plans before deleting it.</p>
+      </div>
+    </div>
+
+    <div class="flex items-center justify-end gap-3 px-6 py-4 border-t border-gray-100 bg-gray-50">
+      <button id="modal-cancel"
+              class="text-sm text-gray-500 hover:text-gray-800 px-4 py-2 rounded-lg
+                     border border-gray-200 hover:border-gray-300 transition">
+        Cancel
+      </button>
+      <button id="modal-confirm"
+              class="hidden bg-red-600 hover:bg-red-700 text-white text-sm font-semibold
+                     px-5 py-2 rounded-lg transition inline-flex items-center gap-2">
+        <i class="fas fa-trash text-xs"></i> Yes, delete
+      </button>
+    </div>
+
+  </div>
+</div>
+{% endblock %}
+
+
+{% block extra_js %}
+<script>
+(function () {
+
+  /* ── File picker / drag-and-drop ── */
+  const input     = document.getElementById('csv_file');
+  const dropZone  = document.getElementById('drop-zone');
+  const dzLabel   = document.getElementById('dz-label');
+  const dzIcon    = document.getElementById('dz-icon');
+  const dzHint    = document.getElementById('dz-hint');
+  const uploadBtn = document.getElementById('upload-btn');
+
+  function applyFile(file) {
+    if (!file) return;
+    dzLabel.textContent = file.name;
+    dzIcon.className    = 'fas fa-file-csv text-2xl text-green-500';
+    dzHint.textContent  = (file.size / 1024).toFixed(1) + ' KB';
+    uploadBtn.disabled  = false;
+    dropZone.classList.replace('border-gray-300', 'border-green-400');
+    dropZone.classList.replace('bg-gray-50',      'bg-green-50');
+  }
+
+  input.addEventListener('change', () => applyFile(input.files[0]));
+
+  dropZone.addEventListener('dragover', e => {
+    e.preventDefault();
+    dropZone.classList.add('border-blue-400', 'bg-blue-50');
+  });
+  dropZone.addEventListener('dragleave', () => {
+    dropZone.classList.remove('border-blue-400', 'bg-blue-50');
+  });
+  dropZone.addEventListener('drop', e => {
+    e.preventDefault();
+    const file = e.dataTransfer.files[0];
+    if (file) {
+      const dt = new DataTransfer();
+      dt.items.add(file);
+      input.files = dt.files;
+      applyFile(file);
+    }
+    dropZone.classList.remove('border-blue-400', 'bg-blue-50');
+  });
+
+  /* ── Live search (debounced 400 ms) ── */
+  const searchInput = document.getElementById('search-input');
+  let timer;
+  if (searchInput) {
+    searchInput.addEventListener('input', () => {
+      clearTimeout(timer);
+      timer = setTimeout(() => document.getElementById('search-form').submit(), 400);
+    });
+  }
+
+  /* ── Delete modal ── */
+  const modal          = document.getElementById('delete-modal');
+  const hdrOk          = document.getElementById('modal-header-ok');
+  const hdrBlocked     = document.getElementById('modal-header-blocked');
+  const bodyOk         = document.getElementById('modal-body-ok');
+  const bodyBlocked    = document.getElementById('modal-body-blocked');
+  const nameEl         = document.getElementById('modal-model-name');
+  const nameBlkEl      = document.getElementById('modal-model-name-blocked');
+  const confirmBtn     = document.getElementById('modal-confirm');
+  const cancelBtn      = document.getElementById('modal-cancel');
+  const plansTbody     = document.getElementById('blocking-plans-tbody');
+
+  let deleteUrl = null;
+  let deleteRowId = null;
+
+  const showModal = () => modal.classList.remove('hidden');
+  const hideModal = () => modal.classList.add('hidden');
+
+  function setConfirmState(name, url, rowId) {
+    hdrOk.classList.remove('hidden');
+    hdrBlocked.classList.add('hidden');
+    bodyOk.classList.remove('hidden');
+    bodyBlocked.classList.add('hidden');
+    confirmBtn.classList.remove('hidden');
+    nameEl.textContent = name;
+    deleteUrl  = url;
+    deleteRowId = rowId;
+  }
+
+  function setBlockedState(name, plans) {
+    hdrOk.classList.add('hidden');
+    hdrBlocked.classList.remove('hidden');
+    bodyOk.classList.add('hidden');
+    bodyBlocked.classList.remove('hidden');
+    confirmBtn.classList.add('hidden');
+    nameBlkEl.textContent = name;
+    plansTbody.innerHTML = plans.map(p =>
+      `<tr>
+        <td class="px-3 py-2 mono font-semibold text-gray-700">${p.date}</td>
+        <td class="px-3 py-2 text-gray-600">${p.work_center}</td>
+        <td class="px-3 py-2 text-gray-600">${p.subprocess}</td>
+      </tr>`
+    ).join('');
+  }
+
+  function removeRow(rowId) {
+    const row = document.getElementById('row-' + rowId);
+    if (!row) return;
+    row.style.transition = 'opacity .3s, transform .3s';
+    row.style.opacity    = '0';
+    row.style.transform  = 'translateX(16px)';
+    setTimeout(() => row.remove(), 320);
+  }
+
+  function getCsrf() {
+    const v = `; ${document.cookie}`.split('; csrftoken=');
+    return v.length === 2 ? v.pop().split(';').shift() : '';
+  }
+
+  document.querySelectorAll('.delete-btn').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const id    = btn.dataset.id;
+      const name  = btn.dataset.name;
+      const url   = btn.dataset.url;
+      const count = parseInt(btn.dataset.count, 10);
+
+      showModal();
+
+      if (count === 0) {
+        setConfirmState(name, url, id);
+        return;
+      }
+
+      /* Model has linked plans — fetch to get list */
+      try {
+        const res  = await fetch(url, {
+          method:  'POST',
+          headers: { 'X-CSRFToken': getCsrf() }
+        });
+        const data = await res.json();
+
+        if (data.ok) {
+          hideModal();
+          removeRow(id);
+        } else if (data.blocking_plans && data.blocking_plans.length) {
+          setBlockedState(name, data.blocking_plans);
+        } else {
+          setConfirmState(name, url, id);
+        }
+      } catch {
+        hideModal();
+        alert('Network error. Please try again.');
+      }
+    });
+  });
+
+  confirmBtn.addEventListener('click', async () => {
+    if (!deleteUrl) return;
+    confirmBtn.disabled  = true;
+    confirmBtn.innerHTML = '<i class="fas fa-spinner fa-spin text-xs"></i> Deleting...';
+
+    try {
+      const res  = await fetch(deleteUrl, {
+        method:  'POST',
+        headers: { 'X-CSRFToken': getCsrf() }
+      });
+      const data = await res.json();
+
+      hideModal();
+      if (data.ok) {
+        removeRow(deleteRowId);
+      } else {
+        alert('Could not delete: ' + (data.error || 'unknown error'));
+      }
+    } catch {
+      hideModal();
+      alert('Network error.');
+    } finally {
+      confirmBtn.disabled  = false;
+      confirmBtn.innerHTML = '<i class="fas fa-trash text-xs"></i> Yes, delete';
+    }
+  });
+
+  cancelBtn.addEventListener('click', hideModal);
+  modal.addEventListener('click', e => { if (e.target === modal) hideModal(); });
+
+})();
+</script>
+{% endblock %}

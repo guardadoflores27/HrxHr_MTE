@@ -1,0 +1,959 @@
+{# templates/production/execution_enter.html #}
+{# hrxhr_project/templates/production/execution_enter.html #}
+{% extends "base.html" %}
+
+{% block title %}Enter Actuals — MTE Hr×Hr{% endblock %}
+
+{% block page_title %}
+  Actuals —
+  <span class="text-emerald-600 mono text-sm font-normal">
+    {{ plan.work_center.name }} · {{ plan.date }}
+  </span>
+{% endblock %}
+
+{% block header_actions %}
+<a href="{% url 'production:execution_list' %}"
+   class="text-xs text-gray-500 hover:text-gray-800 border border-gray-200 px-3 py-1.5 rounded-lg transition">
+  ← Back
+</a>
+{% endblock %}
+
+{% block extra_head %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+/* Dot progress bar */
+
+
+/* Negative input highlight */
+input.field-error { border-color:#ef4444 !important; box-shadow:0 0 0 2px rgba(239,68,68,.2); }
+.field-err-msg { color:#ef4444; font-size:.7rem; font-weight:600; margin-top:2px; display:none; }
+.field-err-msg.visible { display:block; }
+</style>
+{% endblock %}
+
+{% block content %}
+
+{# Plan summary #}
+<div class="bg-slate-50 border border-slate-200 rounded-xl px-5 py-3 mb-5 flex flex-wrap gap-6 text-xs">
+  <div><p class="text-gray-400">Work Center</p><p class="font-semibold text-gray-800">{{ plan.work_center.name }}</p></div>
+  <div><p class="text-gray-400">Subprocess</p><p class="font-semibold text-gray-800">{{ plan.subprocess.name }}</p></div>
+  <div><p class="text-gray-400">Shift</p>
+    <p class="font-semibold mono text-gray-800">
+      {{ plan.shift.start_time|time:"g:i A" }} – {{ plan.shift.end_time|time:"g:i A" }}
+    </p>
+  </div>
+  <div><p class="text-gray-400">HC</p><p class="font-semibold mono text-gray-800">{{ plan.headcount }}</p></div>
+</div>
+
+<form method="post" id="actuals-form" novalidate>
+  {% csrf_token %}
+  <div class="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden mb-5">
+    <div class="px-5 py-4 border-b border-gray-100">
+      <div class="flex items-start justify-between gap-4 flex-wrap">
+        <div>
+          <p class="text-sm font-semibold text-gray-700">Enter Actual Quantities</p>
+          <p class="text-xs text-gray-400 mt-0.5">Negative values are not allowed.</p>
+        </div>
+
+      </div>
+    </div>
+
+    {% if rows %}
+    <div class="overflow-x-auto">
+      <table class="min-w-full text-sm">
+        <thead>
+          <tr class="bg-gray-50 border-b border-gray-100">
+            <th class="px-4 py-2.5 text-left   text-xs font-semibold text-gray-500 uppercase w-36">Hour</th>
+            <th class="px-4 py-2.5 text-left   text-xs font-semibold text-gray-500 uppercase">Model</th>
+            <th class="px-4 py-2.5 text-right  text-xs font-semibold text-gray-500 uppercase w-24">Planned</th>
+            <th class="px-4 py-2.5 text-center text-xs font-semibold text-gray-500 uppercase w-32">Actual</th>
+            <th class="px-4 py-2.5 text-center text-xs font-semibold text-gray-500 uppercase w-28">Scrap</th>
+            <th class="px-4 py-2.5 text-center text-xs font-semibold text-gray-500 uppercase w-28" title="People who actually worked this hour. Blank keeps the planned value.">HC Real</th>
+            <th class="px-4 py-2.5 text-center text-xs font-semibold text-gray-500 uppercase w-20">Eff %</th>
+            <th class="px-4 py-2.5 text-left   text-xs font-semibold text-gray-500 uppercase">Comments</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-50">
+
+          {% for row in rows %}
+          <tr class="align-top hover:bg-gray-50/40 transition-colors">
+
+            {# Hour — full range, e.g. "8:00 AM – 9:00 AM", same format used #}
+            {# in Production Execution, so both screens read consistently #}
+            <td class="px-4 py-3 mono text-xs font-bold text-gray-800 whitespace-nowrap">
+              {{ row.hp.hour|time:"g:i A" }}&nbsp;–&nbsp;{{ row.hp.hour_end|time:"g:i A" }}
+              {% if row.hp.is_overtime %}
+              <span class="ml-1 text-[10px] font-semibold bg-amber-100 text-amber-700
+                           border border-amber-200 px-1.5 py-0.5 rounded-full">OT</span>
+              {% endif %}
+            </td>
+
+            {# Model #}
+            <td class="px-4 py-3 font-medium text-gray-700">{{ row.hp.model.name }}</td>
+
+            {# Planned #}
+            <td class="px-4 py-3 text-right">
+              <span class="mono font-bold text-gray-800">{{ row.hp.planned_quantity }}</span>
+              {% if row.hp.planned_quantity == 0 %}
+              <span class="ml-1 text-[10px] text-gray-400 font-medium block">non-prod.</span>
+              {% endif %}
+            </td>
+
+            {# Actual input #}
+            <td class="px-4 py-3 text-center">
+              {% if row.hp.planned_quantity == 0 %}
+                {# Non-productive hour: show 0, no input needed #}
+                <span class="mono text-xs text-gray-400 font-medium">—</span>
+                <input type="hidden"
+                       name="{{ row.form.actual_quantity.html_name }}"
+                       value="{% if row.execution %}{{ row.execution.actual_quantity }}{% else %}0{% endif %}">
+              {% else %}
+              <input type="number"
+                     name="{{ row.form.actual_quantity.html_name }}"
+                     id="{{ row.form.actual_quantity.auto_id }}"
+                     value="{% if row.execution %}{{ row.execution.actual_quantity }}{% endif %}"
+                     min="0"
+                     class="w-24 rounded-lg border border-gray-300 px-2 py-1 text-sm text-right
+                            shadow-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500
+                            focus:outline-none actual-input"
+                     data-hp="{{ row.hp.id }}"
+                     data-planned="{{ row.hp.planned_quantity }}"
+                     data-original="{% if row.execution %}{{ row.execution.actual_quantity }}{% endif %}"
+                     data-had-execution="{% if row.execution %}1{% else %}0{% endif %}"
+                     oninput="validateNonNegative(this)">
+              <p class="field-err-msg" id="neg-err-actual-{{ row.hp.id }}">
+                <i class="fas fa-triangle-exclamation mr-1"></i>Cannot be negative
+              </p>
+
+              {% endif %}
+            </td>
+
+            {# Scrap input #}
+            <td class="px-4 py-3 text-center">
+              <input type="number"
+                     name="{{ row.form.scrap_quantity.html_name }}"
+                     id="{{ row.form.scrap_quantity.auto_id }}"
+                     value="{% if row.execution %}{{ row.execution.scrap_quantity }}{% else %}0{% endif %}"
+                     min="0"
+                     class="w-20 rounded-lg border border-gray-300 px-2 py-1 text-sm text-right
+                            shadow-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500
+                            focus:outline-none"
+                     data-hp="{{ row.hp.id }}"
+                     oninput="validateNonNegative(this)">
+              <p class="field-err-msg" id="neg-err-scrap-{{ row.hp.id }}">
+                <i class="fas fa-triangle-exclamation mr-1"></i>Cannot be negative
+              </p>
+            </td>
+
+            {# Actual head count — blank means "same as planned" #}
+            <td class="px-4 py-3 text-center">
+              <input type="number"
+                     name="{{ row.form.actual_headcount.html_name }}"
+                     id="{{ row.form.actual_headcount.auto_id }}"
+                     value="{% if row.execution and row.execution.actual_headcount is not None %}{{ row.execution.actual_headcount }}{% endif %}"
+                     min="0"
+                     placeholder="{{ row.hp.effective_headcount }}"
+                     title="Planned: {{ row.hp.effective_headcount }}. Leave blank if it matched."
+                     class="w-20 rounded-lg border border-gray-300 px-2 py-1 text-sm text-right
+                            shadow-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500
+                            focus:outline-none actual-hc-input"
+                     data-hp="{{ row.hp.id }}"
+                     data-planned-hc="{{ row.hp.effective_headcount }}"
+                     oninput="validateNonNegative(this); toggleHcComment({{ row.hp.id }})">
+              <p class="text-[10px] text-gray-400 mt-0.5">plan {{ row.hp.effective_headcount }}</p>
+            </td>
+
+            {# EFF % #}
+            <td class="px-4 py-2 text-center mono text-xs" id="eff-{{ row.hp.id }}">
+              {% if row.hp.planned_quantity == 0 %}
+                {# Planned = 0: either non-productive or unplanned production #}
+                {% if row.execution and row.execution.actual_quantity > 0 %}
+                <span class="inline-flex items-center gap-1 text-[10px] font-semibold
+                             bg-amber-100 text-amber-700 border border-amber-200
+                             px-2 py-0.5 rounded-full">
+                  <i class="fas fa-triangle-exclamation text-[9px]"></i>Unplanned
+                </span>
+                {% else %}
+                <span class="text-gray-300">N/A</span>
+                {% endif %}
+              {% elif row.execution and row.hp.planned_quantity > 0 %}
+                {% widthratio row.execution.actual_quantity row.hp.planned_quantity 100 %}%
+              {% else %}—{% endif %}
+            </td>
+
+            {# Comments column #}
+            <td class="px-4 py-3">
+
+              {# ── Time Blocks reference note — shown whenever this hour has #}
+              {# blocks, regardless of planned quantity. This is now stored  #}
+              {# in its OWN structured fields (auto_reason / auto_categories) #}
+              {# on save, kept SEPARATE from the supervisor's free-text       #}
+              {# comment so the dashboard can filter by category cleanly.     #}
+              {% if row.auto_reason %}
+              <div class="mb-2 flex items-start gap-2 bg-slate-50 border border-slate-200
+                          rounded-lg px-3 py-2">
+                <i class="fas fa-robot text-slate-400 text-xs mt-0.5 flex-shrink-0"></i>
+                <div>
+                  <p class="text-[10px] font-semibold text-slate-500 uppercase tracking-wide mb-0.5">
+                    System — Time Blocks
+                  </p>
+                  <p class="text-xs text-slate-700">{{ row.auto_reason }}</p>
+                </div>
+              </div>
+              {% endif %}
+
+              {# ── ZERO COMMENT (planned=0, required note) ── #}
+              {% if row.hp.planned_quantity == 0 %}
+              <div>
+                <p class="text-[10px] text-gray-500 font-semibold uppercase tracking-wide mb-1">
+                  <i class="fas fa-comment mr-0.5"></i> Comment <span class="text-red-500">*</span>
+                </p>
+                {{ row.form.zero_comment }}
+                <div id="err-zero-{{ row.hp.id }}"
+                     class="hidden text-red-500 text-[11px] font-semibold mt-1">
+                  <i class="fas fa-circle-exclamation mr-1"></i>Comment is required for non-productive hours.
+                </div>
+              </div>
+
+              {% else %}
+
+              {# ── BELOW PLAN: loss reasons + comment ── #}
+              <div id="loss-panel-{{ row.hp.id }}"
+                   class="loss-panel {% if not row.execution or row.execution.actual_quantity >= row.hp.planned_quantity %}hidden{% endif %}">
+                <p class="text-xs text-red-500 font-semibold mb-1">
+                  <i class="fas fa-triangle-exclamation mr-1"></i>Below plan —
+                  <span class="text-red-600">select reason(s): <span class="text-red-500">*</span></span>
+                </p>
+                <div class="flex flex-col gap-1 mb-1">
+                  {% for cb in row.form.loss_reasons %}
+                  <label class="flex items-center gap-2 cursor-pointer">
+                    {{ cb.tag }}
+                    <span class="text-gray-600 text-xs">{{ cb.choice_label }}</span>
+                  </label>
+                  {% endfor %}
+                </div>
+                <div id="err-reason-{{ row.hp.id }}"
+                     class="hidden text-red-500 text-[11px] font-semibold mb-1">
+                  <i class="fas fa-circle-exclamation mr-1"></i>Select at least one loss reason.
+                </div>
+                <p class="text-[10px] text-red-400 font-semibold uppercase tracking-wide mb-1 mt-2">
+                  <i class="fas fa-comment mr-0.5"></i> Loss Comment <span class="text-red-500">*</span>
+                </p>
+                {{ row.form.comments }}
+                <div id="err-comments-{{ row.hp.id }}"
+                     class="hidden text-red-500 text-[11px] font-semibold mt-1">
+                  <i class="fas fa-circle-exclamation mr-1"></i>Loss comment is required.
+                </div>
+              </div>
+
+              {# ── OVER PLAN: overproduction comment ── #}
+              <div id="over-panel-{{ row.hp.id }}"
+                   class="{% if not row.execution or row.execution.actual_quantity <= row.hp.planned_quantity %}hidden{% endif %}">
+                <p class="text-xs text-emerald-600 font-semibold mb-1">
+                  <i class="fas fa-arrow-trend-up mr-1"></i>Over plan
+                </p>
+                <p class="text-[10px] text-emerald-500 font-semibold uppercase tracking-wide mb-1">
+                  <i class="fas fa-comment mr-0.5"></i> Overproduction Comment <span class="text-red-500">*</span>
+                </p>
+                {{ row.form.over_comments }}
+                <div id="err-over-{{ row.hp.id }}"
+                     class="hidden text-red-500 text-[11px] font-semibold mt-1">
+                  <i class="fas fa-circle-exclamation mr-1"></i>Overproduction comment is required.
+                </div>
+              </div>
+
+              {# ── SCRAP: optional comment ── #}
+              <div id="scrap-panel-{{ row.hp.id }}"
+                   class="{% if not row.execution or row.execution.scrap_quantity == 0 %}hidden{% endif %}">
+                <p class="text-[10px] text-amber-500 font-semibold uppercase tracking-wide mb-1">
+                  <i class="fas fa-triangle-exclamation mr-0.5"></i> Scrap Comment
+                  <span class="text-gray-400 font-normal">(optional)</span>
+                </p>
+                {{ row.form.scrap_comments }}
+              </div>
+
+              {# ── ON TARGET: satisfactory comment ── #}
+              <div id="ok-panel-{{ row.hp.id }}"
+                   class="{% if not row.execution or row.execution.actual_quantity != row.hp.planned_quantity %}hidden{% endif %}">
+                <p class="text-xs text-emerald-600 font-semibold mb-1">
+                  <i class="fas fa-circle-check mr-1"></i>On Target
+                </p>
+                <p class="text-[10px] text-emerald-500 font-semibold uppercase tracking-wide mb-1">
+                  <i class="fas fa-comment mr-0.5"></i> Satisfactory Comment <span class="text-red-500">*</span>
+                </p>
+                {{ row.form.ok_comments }}
+                <div id="err-ok-{{ row.hp.id }}"
+                     class="hidden text-red-500 text-[11px] font-semibold mt-1">
+                  <i class="fas fa-circle-exclamation mr-1"></i>A comment is required when updating the execution quantity.
+                </div>
+              </div>
+
+              <span id="loss-ok-{{ row.hp.id }}" class="hidden"></span>
+
+              {% endif %}{# end planned != 0 #}
+
+              {# ── HEAD COUNT MISMATCH: comment required ── #}
+              <div id="hc-panel-{{ row.hp.id }}"
+                   class="{% if not row.execution or row.execution.headcount_matches_plan %}hidden{% endif %} mb-2">
+                <p class="text-[10px] text-orange-500 font-semibold uppercase tracking-wide mb-1">
+                  <i class="fas fa-users mr-0.5"></i> Head Count Comment <span class="text-red-500">*</span>
+                </p>
+                {{ row.form.headcount_comment }}
+                <div id="err-hc-{{ row.hp.id }}"
+                     class="hidden text-red-500 text-[11px] font-semibold mt-1">
+                  <i class="fas fa-circle-exclamation mr-1"></i>Explain why the head count differed from the plan.
+                </div>
+              </div>
+
+              {# ── OPERATIONAL EVENTS ─────────────────────────────────── #}
+              {# Independent of the situational comments above: Lunch,    #}
+              {# Chair Time, Meeting, etc. are structured ExecutionEvent  #}
+              {# rows, never text merged into a comment field.            #}
+              <div class="mt-3 border-t border-dashed border-gray-200 pt-3"
+                   data-events-block="{{ row.hp.id }}">
+                <div class="flex items-center justify-between mb-2">
+                  <p class="text-[10px] font-semibold text-slate-500 uppercase tracking-wide">
+                    <i class="fas fa-clock mr-1"></i>Operational Events
+                  </p>
+                  <button type="button"
+                          class="add-event-btn text-[10px] font-semibold text-blue-600 hover:text-blue-800
+                                 border border-blue-200 hover:border-blue-300 rounded-full px-2 py-0.5 transition"
+                          data-hp="{{ row.hp.id }}">
+                    <i class="fas fa-plus mr-0.5"></i>Add Event
+                  </button>
+                </div>
+
+                {{ row.event_formset.management_form }}
+
+                <div class="events-list flex flex-col gap-2" id="events-list-{{ row.hp.id }}">
+                  {% for ef in row.event_formset.forms %}
+                    {% include "production/_event_card.html" with ef=ef event_types=event_types %}
+                  {% endfor %}
+                </div>
+
+                {# Hidden clone source for JS "Add Event" — Django's empty_form   #}
+                {# already carries "__prefix__" placeholders in every field name. #}
+                <template id="empty-event-template-{{ row.hp.id }}">
+                  {% include "production/_event_card.html" with ef=row.event_formset.empty_form event_types=event_types %}
+                </template>
+              </div>
+
+              {# Stash the auto-reason text for this row so JS can pre-fill #}
+              {# whichever comment field becomes visible, without a second  #}
+              {# round-trip to the server. #}
+              <span class="hidden auto-reason-store"
+                    data-hp="{{ row.hp.id }}"
+                    data-auto-reason="{{ row.auto_reason|escapejs }}"></span>
+
+            </td>
+          </tr>
+          {% endfor %}
+
+        </tbody>
+      </table>
+    </div>
+
+    {# Form actions #}
+    <div class="flex justify-between items-center px-5 py-4 border-t border-gray-100">
+      <a href="{% url 'production:execution_list' %}"
+         class="text-xs font-semibold text-gray-500 hover:text-gray-800
+                border border-gray-200 hover:border-gray-300 px-5 py-2.5 rounded-lg transition">
+        <i class="fas fa-arrow-left text-xs"></i> Back to Execution
+      </a>
+      <button type="submit"
+              class="bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold
+                     px-6 py-2.5 rounded-lg transition">
+        <i class="fas fa-floppy-disk mr-1.5"></i>Save Actuals
+      </button>
+    </div>
+
+    {% endif %}
+  </div>
+</form>
+
+{# Plan vs Real chart #}
+{% if rows %}
+<div class="bg-white rounded-xl border border-gray-200 shadow-sm px-5 py-4 mb-6">
+  <p class="text-sm font-semibold text-gray-700 mb-4">
+    <i class="fas fa-chart-bar mr-1.5 text-blue-500"></i>Plan vs Actual
+  </p>
+  <canvas id="planVsRealChart" height="90"></canvas>
+</div>
+
+<script>
+const chartLabels  = [{% for row in rows %}"{{ row.hp.hour|time:"g:i A" }}"{% if not forloop.last %},{% endif %}{% endfor %}];
+const chartPlanned = [{% for row in rows %}{{ row.hp.planned_quantity }}{% if not forloop.last %},{% endif %}{% endfor %}];
+const chartActual  = [{% for row in rows %}{% if row.execution %}{{ row.execution.actual_quantity }}{% else %}null{% endif %}{% if not forloop.last %},{% endif %}{% endfor %}];
+// Maps each chart bar position to its HourlyPlan id, so a successful save can
+// update the exact bar for that row without reloading the page.
+const chartHpIds   = [{% for row in rows %}{{ row.hp.id }}{% if not forloop.last %},{% endif %}{% endfor %}];
+// Expose the mutable actuals + index on window so the save handler in the
+// separate extra_js <script> block can refresh the chart in place.
+window.chartHpIds  = chartHpIds;
+window.chartActual = chartActual;
+window.chartPlanned = chartPlanned;
+
+// Stored on window so the AJAX save handler (in the extra_js block) can reach
+// it and refresh the actuals after saving. Single source of truth: the chart
+// always mirrors the numbers returned by the server on save.
+window.planVsRealChart = new Chart(document.getElementById("planVsRealChart").getContext("2d"), {
+  type: "bar",
+  data: {
+    labels: chartLabels,
+    datasets: [
+      {
+        label: "Planned",
+        data: chartPlanned,
+        backgroundColor: "rgba(59,130,246,0.25)",
+        borderColor: "#3b82f6", borderWidth: 2, borderRadius: 4,
+      },
+      {
+        label: "Actual",
+        data: chartActual,
+        backgroundColor: chartActual.map((v, i) =>
+          v === null ? "transparent" :
+          chartPlanned[i] === 0 && v > 0 ? "rgba(251,191,36,0.7)" :
+          v >= chartPlanned[i] ? "rgba(16,185,129,0.7)" : "rgba(239,68,68,0.7)"
+        ),
+        borderColor: chartActual.map((v, i) =>
+          v === null ? "transparent" :
+          chartPlanned[i] === 0 && v > 0 ? "#f59e0b" :
+          v >= chartPlanned[i] ? "#10b981" : "#ef4444"
+        ),
+        borderWidth: 2, borderRadius: 4,
+      },
+    ]
+  },
+  options: {
+    responsive: true,
+    plugins: {
+      legend: { position: "top", labels: { font: { size: 11 } } },
+      tooltip: {
+        callbacks: {
+          afterLabel: (item) => {
+            if (item.datasetIndex === 1 && item.raw !== null) {
+              const planned = chartPlanned[item.dataIndex];
+              if (planned === 0) return item.raw > 0 ? "⚠ Unplanned production" : "Non-productive hour";
+              const pct = Math.round(item.raw / planned * 100);
+              return `EFF: ${pct}%`;
+            }
+            return "";
+          }
+        }
+      }
+    },
+    scales: {
+      y: { beginAtZero: true, ticks: { font: { size: 10 } } },
+      x: { ticks: { font: { size: 10 } } },
+    }
+  }
+});
+</script>
+{% endif %}
+
+{% endblock %}
+
+{% block extra_js %}
+<script>
+// ─── Non-negative validation ──────────────────────────────────────────────────
+function validateNonNegative(input) {
+  const val    = parseFloat(input.value);
+  const hpId   = input.dataset.hp;
+  const isActual = input.name && input.name.includes("actual_quantity");
+  const errId  = isActual
+    ? `neg-err-actual-${hpId}`
+    : `neg-err-scrap-${hpId}`;
+  const errEl  = document.getElementById(errId);
+
+  if (!isNaN(val) && val < 0) {
+    input.value = 0;               // clamp to 0 immediately
+    input.classList.add("field-error");
+    if (errEl) errEl.classList.add("visible");
+    setTimeout(() => {
+      input.classList.remove("field-error");
+      if (errEl) errEl.classList.remove("visible");
+    }, 3000);
+  } else {
+    input.classList.remove("field-error");
+    if (errEl) errEl.classList.remove("visible");
+  }
+}
+
+
+
+// ─── Time Blocks are now stored in their OWN structured fields ───────────────
+// (auto_reason / auto_categories on the server). They are intentionally NOT
+// injected into the supervisor's free-text comment fields, so the dashboard
+// can filter by category without parsing prose. The reference note above the
+// comment box stays visible for the supervisor's convenience.
+//
+// autoFillCommentIfEmpty is kept as a no-op so the existing call sites in the
+// panel-toggle handler below don't error; it no longer writes anything.
+function autoFillCommentIfEmpty(_hpId, _fieldName) {
+  /* intentionally left blank — Time Blocks live in their own fields now */
+}
+
+// ─── Comment panels ───────────────────────────────────────────────────────────
+document.querySelectorAll(".actual-input").forEach(input => {
+  input.addEventListener("input", function () {
+    const hpId    = this.dataset.hp;
+    const planned = parseInt(this.dataset.planned, 10);
+    const actual  = parseInt(this.value, 10);
+
+    const panel      = document.getElementById(`loss-panel-${hpId}`);
+    const overPanel  = document.getElementById(`over-panel-${hpId}`);
+    const scrapPanel = document.getElementById(`scrap-panel-${hpId}`);
+    const okPanel    = document.getElementById(`ok-panel-${hpId}`);
+    const effCell    = document.getElementById(`eff-${hpId}`);
+
+    if (planned === 0) {
+      // Non-productive hour: no panels needed
+      if (effCell) {
+        if (!isNaN(actual) && actual > 0) {
+          effCell.innerHTML = '<span class="inline-flex items-center gap-1 text-[10px] font-semibold bg-amber-100 text-amber-700 border border-amber-200 px-2 py-0.5 rounded-full"><i class="fas fa-triangle-exclamation text-[9px]"></i>Unplanned</span>';
+        } else {
+          effCell.innerHTML = '<span class="text-gray-300">N/A</span>';
+        }
+      }
+      return;
+    }
+
+    // Update EFF%
+    if (effCell) {
+      if (!isNaN(actual) && planned > 0) {
+        const pct = Math.round(actual / planned * 100);
+        effCell.textContent  = pct + "%";
+        effCell.style.color  = actual >= planned ? "#10b981" : "#ef4444";
+        effCell.style.fontWeight = "700";
+      } else {
+        effCell.textContent = "—";
+        effCell.style.color = "";
+        effCell.style.fontWeight = "";
+      }
+    }
+
+    // Show/hide panels — and auto-fill whichever comment field becomes
+    // visible with the Time Blocks summary, but only if still empty, so a
+    // supervisor's own wording is never overwritten.
+    if (!isNaN(actual) && actual < planned) {
+      panel?.classList.remove("hidden");
+      overPanel?.classList.add("hidden");
+      okPanel?.classList.add("hidden");
+      // Auto-check first loss reason if none checked
+      const cbs = panel?.querySelectorAll("input[type=checkbox]") || [];
+      if (![...cbs].some(c => c.checked) && cbs.length) cbs[0].checked = true;
+      autoFillCommentIfEmpty(hpId, "comments");
+    } else if (!isNaN(actual) && actual > planned) {
+      panel?.classList.add("hidden");
+      overPanel?.classList.remove("hidden");
+      okPanel?.classList.add("hidden");
+      panel?.querySelectorAll("input[type=checkbox]").forEach(c => c.checked = false);
+      autoFillCommentIfEmpty(hpId, "over_comments");
+    } else if (!isNaN(actual) && actual === planned) {
+      panel?.classList.add("hidden");
+      overPanel?.classList.add("hidden");
+      okPanel?.classList.remove("hidden");
+      panel?.querySelectorAll("input[type=checkbox]").forEach(c => c.checked = false);
+      // Real-time: as soon as actual === planned, drop "Plan alcanzado" into
+      // the satisfactory comment if the user hasn't typed their own note, so
+      // it's visible before saving. The server does the same on save.
+      const okTa = document.querySelector(`[name$="hp-${hpId}-ok_comments"]`);
+      if (okTa && !okTa.value.trim()) {
+        okTa.value = "Plan alcanzado";
+      }
+      // Clear any leftover "comment required" hint from a previous state.
+      document.getElementById(`err-ok-${hpId}`)?.classList.add("hidden");
+      okTa?.classList.remove("field-error");
+      autoFillCommentIfEmpty(hpId, "ok_comments");
+    } else {
+      panel?.classList.add("hidden");
+      overPanel?.classList.add("hidden");
+      okPanel?.classList.add("hidden");
+    }
+
+    // Scrap panel: show if scrap > 0
+    const scrapEl = document.querySelector(`[name$="hp-${hpId}-scrap_quantity"]`);
+    const scrapVal = parseInt(scrapEl?.value, 10) || 0;
+    if (scrapVal > 0) {
+      scrapPanel?.classList.remove("hidden");
+    }
+  });
+});
+
+// Scrap panel visibility on scrap input change
+document.querySelectorAll("input[name*='scrap_quantity']").forEach(input => {
+  const match = input.name.match(/hp-(\d+)-scrap_quantity/);
+  if (!match) return;
+  const hpId = match[1];
+  input.addEventListener("input", function () {
+    const scrapPanel = document.getElementById(`scrap-panel-${hpId}`);
+    if (parseInt(this.value, 10) > 0) {
+      scrapPanel?.classList.remove("hidden");
+    } else {
+      scrapPanel?.classList.add("hidden");
+    }
+  });
+});
+
+// ─── Head count: show the comment box when it differs from the plan ──────────
+function toggleHcComment(hpId) {
+  const input = document.querySelector(`.actual-hc-input[data-hp="${hpId}"]`);
+  const panel = document.getElementById(`hc-panel-${hpId}`);
+  if (!input || !panel) return;
+  const planned = parseInt(input.dataset.plannedHc, 10);
+  const raw     = input.value.trim();
+  // Blank means "same as planned", so no explanation is needed.
+  const differs = raw !== "" && parseInt(raw, 10) !== planned;
+  panel.classList.toggle("hidden", !differs);
+  if (!differs) {
+    document.getElementById(`err-hc-${hpId}`)?.classList.add("hidden");
+  }
+}
+
+// ─── Form submit validation ───────────────────────────────────────────────────
+document.getElementById("actuals-form").addEventListener("submit", function (e) {
+  let hasErrors = false;
+
+  document.querySelectorAll(".actual-input").forEach(input => {
+    const hpId    = input.dataset.hp;
+    const planned = parseInt(input.dataset.planned, 10);
+    const actual  = parseInt(input.value, 10);
+
+    // Clear previous errors
+    ["err-reason", "err-comments", "err-over", "err-ok", "err-zero"].forEach(prefix => {
+      document.getElementById(`${prefix}-${hpId}`)?.classList.add("hidden");
+    });
+
+    if (isNaN(actual)) return;   // blank row — skip
+
+    // Negative check (belt-and-suspenders)
+    if (actual < 0) {
+      validateNonNegative(input);
+      hasErrors = true;
+      return;
+    }
+
+    if (planned === 0) {
+      // Non-productive hour: zero_comment is required
+      const ta = document.querySelector(`[name$="hp-${hpId}-zero_comment"]`);
+      if (!ta?.value.trim()) {
+        document.getElementById(`err-zero-${hpId}`)?.classList.remove("hidden");
+        ta?.classList.add("field-error");
+        hasErrors = true;
+      }
+      return;
+    }
+
+    if (actual < planned) {
+      const panel = document.getElementById(`loss-panel-${hpId}`);
+      const cbs   = panel?.querySelectorAll("input[type=checkbox]:checked") || [];
+      if (!cbs.length) {
+        document.getElementById(`err-reason-${hpId}`)?.classList.remove("hidden");
+        hasErrors = true;
+      }
+      const ta = document.querySelector(`[name$="hp-${hpId}-comments"]`);
+      if (!ta?.value.trim()) {
+        document.getElementById(`err-comments-${hpId}`)?.classList.remove("hidden");
+        ta?.classList.add("field-error");
+        hasErrors = true;
+      }
+    } else if (actual > planned) {
+      const ta = document.querySelector(`[name$="hp-${hpId}-over_comments"]`);
+      if (!ta?.value.trim()) {
+        document.getElementById(`err-over-${hpId}`)?.classList.remove("hidden");
+        ta?.classList.add("field-error");
+        hasErrors = true;
+      }
+    } else {
+      // Plan met exactly — a comment is never required; the server
+      // auto-fills "Plan alcanzado" when it is left blank.
+    }
+  });
+
+  if (hasErrors) {
+    e.preventDefault();
+    document.querySelector('[id^="err-"]:not(.hidden)')
+      ?.scrollIntoView({ behavior: "smooth", block: "center" });
+    return;
+  }
+
+  // Client validation passed → submit via AJAX so we can refresh the shown
+  // values and show a message without reloading the whole page.
+  e.preventDefault();
+  submitActualsAjax(this);
+});
+
+// ─── AJAX save ────────────────────────────────────────────────────────────────
+function showFlash(level, text) {
+  // Plain-text banner (escaped by the caller when needed).
+  showFlashHTML(level, `<span class="font-medium">${text}</span>`);
+}
+
+function showFlashHTML(level, html) {
+  // Inline banner placed just above the form, inside the normal page flow
+  // (not floating). Reused for subsequent messages, with comfortable spacing
+  // and a close button. It stays until the user dismisses it or reloads.
+  // Accepts markup so the save summary can list the failing rows as links.
+  let bar = document.getElementById("ajax-flash");
+  if (!bar) {
+    bar = document.createElement("div");
+    bar.id = "ajax-flash";
+    bar.className = "mb-5";           // breathing room below the banner
+    const form = document.getElementById("actuals-form");
+    form.parentNode.insertBefore(bar, form);
+  }
+
+  const tone = {
+    success: "bg-emerald-50 border-emerald-200 text-emerald-800",
+    error:   "bg-red-50 border-red-200 text-red-800",
+    warning: "bg-amber-50 border-amber-200 text-amber-800",
+  }[level] || "bg-blue-50 border-blue-200 text-blue-800";
+  const icon = level === "success" ? "fa-circle-check"
+             : level === "error"   ? "fa-circle-xmark" : "fa-circle-info";
+
+  bar.innerHTML =
+    `<div class="flex items-start gap-3 rounded-xl border px-4 py-3 text-sm shadow-sm ${tone}">
+       <i class="fas ${icon} flex-shrink-0 mt-0.5"></i>
+       <div class="flex-1 min-w-0">${html}</div>
+       <button type="button" aria-label="Close"
+               class="text-current opacity-50 hover:opacity-100 text-lg leading-none flex-shrink-0"
+               onclick="document.getElementById('ajax-flash').remove()">&times;</button>
+     </div>`;
+  bar.scrollIntoView({ behavior: "smooth", block: "nearest" });
+}
+
+function submitActualsAjax(form) {
+  const btn = form.querySelector('button[type="submit"]');
+  const original = btn ? btn.innerHTML : "";
+  if (btn) { btn.disabled = true; btn.innerHTML =
+    '<i class="fas fa-spinner fa-spin mr-1.5"></i>Saving…'; }
+
+  fetch(form.action || window.location.href, {
+    method: "POST",
+    headers: { "X-Requested-With": "XMLHttpRequest" },
+    body: new FormData(form),
+  })
+  .then(r => r.json())
+  .then(data => {
+    const saved  = (data.rows || []).filter(r => r.saved);
+    const failed = (data.rows || []).filter(r => !r.saved);
+
+    // 1) Update each saved row's shown value + efficiency, in place.
+    saved.forEach(row => {
+      const input = document.querySelector(`.actual-input[data-hp="${row.hp_id}"]`);
+      if (input) input.value = row.actual_quantity;
+      const eff = document.getElementById(`eff-${row.hp_id}`);
+      if (eff && row.efficiency_pct !== null && row.efficiency_pct !== undefined) {
+        eff.textContent = row.efficiency_pct + "%";
+      }
+      // Clear any previous error state on a now-successful row.
+      clearRowError(row.hp_id);
+    });
+
+    // 2) Show per-row error detail (reason + how to fix) next to each row.
+    failed.forEach(row => showRowError(row.hp_id, row.errors || []));
+
+    // 3) Refresh the Plan vs Actual chart from the freshly-saved numbers,
+    //    so it always mirrors the database with no page reload.
+    refreshActualsChart(saved);
+
+    // 4) Short summary banner at the top.
+    showSaveSummary(saved, failed);
+  })
+  .catch(() => showFlash("error", "Network error — changes were not saved."))
+  .finally(() => { if (btn) { btn.disabled = false; btn.innerHTML = original; } });
+}
+
+// ─── Per-row error detail (reason + how to fix) ────────────────────────────────
+// Maps a backend reason to a concrete "how to fix" hint by keyword.
+function howToFix(reason) {
+  const r = reason.toLowerCase();
+  if (r.includes("loss reason"))          return "Select at least one loss reason, then save again.";
+  if (r.includes("loss comment"))         return "Enter the loss comment and save again.";
+  if (r.includes("overproduction"))       return "Enter the overproduction comment and save again.";
+  if (r.includes("non-productive"))       return "Enter a comment for this non-productive hour and save again.";
+  if (r.includes("actual"))               return "Enter a valid Actual Quantity and save again.";
+  if (r.includes("event"))                return "Select a valid Operational Event and save again.";
+  if (r.includes("comment"))              return "Enter a comment and save again.";
+  return "Fix the highlighted field and save again.";
+}
+
+function clearRowError(hpId) {
+  const input = document.querySelector(`.actual-input[data-hp="${hpId}"]`);
+  input?.classList.remove("field-error");
+  document.getElementById(`row-error-${hpId}`)?.remove();
+}
+
+function showRowError(hpId, errors) {
+  const input = document.querySelector(`.actual-input[data-hp="${hpId}"]`);
+  input?.classList.add("field-error");
+
+  // Anchor the detail box in the comments cell of that row.
+  const anchor = input?.closest("tr")?.querySelector("td:last-child");
+  if (!anchor) return;
+
+  document.getElementById(`row-error-${hpId}`)?.remove();
+  const box = document.createElement("div");
+  box.id = `row-error-${hpId}`;
+  box.className =
+    "mt-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-800";
+  const reason = errors[0] || "Invalid data.";
+  box.innerHTML =
+    `<p class="font-semibold flex items-center gap-1.5">
+       <i class="fas fa-circle-xmark"></i> Failed to save
+     </p>
+     <p class="mt-1"><span class="font-semibold">Reason:</span> ${reason}</p>
+     <p class="mt-0.5"><span class="font-semibold">How to fix:</span> ${howToFix(reason)}</p>`;
+  anchor.prepend(box);
+}
+
+// ─── Chart refresh after save ──────────────────────────────────────────────────
+function refreshActualsChart(savedRows) {
+  const chart = window.planVsRealChart;
+  if (!chart || !window.chartHpIds) return;
+  savedRows.forEach(row => {
+    const idx = window.chartHpIds.indexOf(row.hp_id);
+    if (idx === -1) return;
+    window.chartActual[idx] = row.actual_quantity;
+  });
+  // Re-point the dataset and re-run the color logic, then repaint.
+  const ds = chart.data.datasets[1];   // dataset[1] = "Actual"
+  ds.data = window.chartActual;
+  ds.backgroundColor = window.chartActual.map((v, i) =>
+    v === null ? "transparent" :
+    window.chartPlanned[i] === 0 && v > 0 ? "rgba(251,191,36,0.7)" :
+    v >= window.chartPlanned[i] ? "rgba(16,185,129,0.7)" : "rgba(239,68,68,0.7)");
+  ds.borderColor = window.chartActual.map((v, i) =>
+    v === null ? "transparent" :
+    window.chartPlanned[i] === 0 && v > 0 ? "#f59e0b" :
+    v >= window.chartPlanned[i] ? "#10b981" : "#ef4444");
+  chart.update();
+}
+
+// ─── Short save summary banner ─────────────────────────────────────────────────
+function showSaveSummary(saved, failed) {
+  const total = saved.length + failed.length;
+
+  // Everything went through — a short confirmation is enough.
+  if (saved.length && !failed.length) {
+    showFlash("success", `All ${saved.length} row(s) saved successfully.`);
+    return;
+  }
+  if (!saved.length && !failed.length) {
+    showFlash("warning", "No rows saved — enter at least one actual quantity.");
+    return;
+  }
+
+  // Something failed: name the exact hours/models so the user never has to
+  // hunt down which row is blocking the save.
+  const label = r => `${r.hour}${r.model ? " · " + r.model : ""}`;
+
+  const failedList = failed.map(r =>
+    `<li class="flex items-start gap-1.5">
+       <i class="fas fa-circle-xmark mt-0.5 text-red-500 flex-shrink-0"></i>
+       <span>
+         <button type="button" onclick="jumpToRow(${r.hp_id})"
+                 class="font-semibold underline decoration-dotted hover:no-underline">
+           ${label(r)}
+         </button>
+         <span class="opacity-80"> — ${(r.errors && r.errors[0]) || "Invalid data."}</span>
+       </span>
+     </li>`).join("");
+
+  const savedList = saved.length
+    ? `<p class="mt-2 text-[11px] opacity-80">
+         <i class="fas fa-circle-check mr-1"></i>Saved: ${saved.map(label).join(", ")}
+       </p>`
+    : "";
+
+  const headline = saved.length
+    ? `${saved.length} of ${total} row(s) saved — ${failed.length} still need fixing:`
+    : `Nothing saved — ${failed.length} row(s) need fixing:`;
+
+  showFlashHTML(saved.length ? "warning" : "error",
+    `<p class="font-semibold">${headline}</p>
+     <ul class="mt-1.5 space-y-1 text-[11px]">${failedList}</ul>
+     ${savedList}`);
+}
+
+// Scrolls to a row and briefly highlights it, so "which one?" is obvious.
+function jumpToRow(hpId) {
+  const input = document.querySelector(`.actual-input[data-hp="${hpId}"]`);
+  const row   = input?.closest("tr");
+  if (!row) return;
+  row.scrollIntoView({ behavior: "smooth", block: "center" });
+  row.classList.add("ring-2", "ring-red-400", "ring-inset");
+  setTimeout(() => row.classList.remove("ring-2", "ring-red-400", "ring-inset"), 2500);
+  input?.focus();
+}
+
+// Clear red border when user types in a textarea
+document.querySelectorAll("textarea").forEach(ta => {
+  ta.addEventListener("input", function () {
+    this.classList.remove("field-error");
+  });
+});
+
+// ─── Operational Events — add / remove / icon sync ─────────────────────────────
+
+// "+ Add Event": clone the hidden empty_form template, swap Django's
+// "__prefix__" placeholder for the next form index, bump TOTAL_FORMS.
+document.querySelectorAll(".add-event-btn").forEach(btn => {
+  btn.addEventListener("click", function () {
+    const hpId = this.dataset.hp;
+    const totalInput = document.getElementById(`id_hp-${hpId}-events-TOTAL_FORMS`);
+    const template   = document.getElementById(`empty-event-template-${hpId}`);
+    const list       = document.getElementById(`events-list-${hpId}`);
+    if (!totalInput || !template || !list) return;
+
+    const idx  = parseInt(totalInput.value, 10);
+    const html = template.innerHTML.replaceAll("__prefix__", idx);
+    const wrapper = document.createElement("div");
+    wrapper.innerHTML = html.trim();
+    list.appendChild(wrapper.firstElementChild);
+    totalInput.value = idx + 1;
+  });
+});
+
+// "Delete" on a card: mark the formset's DELETE checkbox and hide the card
+// rather than removing it from the DOM, so already-saved events are
+// removed server-side on submit; unsaved cards are simply left unchecked
+// blanks, which the formset silently ignores.
+document.addEventListener("click", function (e) {
+  const btn = e.target.closest(".remove-event-btn");
+  if (!btn) return;
+  const card = btn.closest("[data-event-form]");
+  if (!card) return;
+  const deleteInput = card.querySelector("input[type=checkbox][name$='-DELETE']");
+  if (deleteInput) deleteInput.checked = true;
+  card.style.display = "none";
+});
+
+// Keep the card's icon in sync with the selected event type, and surface
+// the "comment required" hint for event types that demand one.
+document.addEventListener("change", function (e) {
+  if (!e.target.classList.contains("event-type-select")) return;
+  const card = e.target.closest("[data-event-form]");
+  if (!card) return;
+  const opt = e.target.selectedOptions[0];
+  const icon = card.querySelector(".event-icon");
+  if (icon) {
+    icon.className = "fas " + (opt?.dataset.icon || "fa-circle-info") +
+                      " event-icon text-sm text-gray-400 flex-shrink-0";
+  }
+  const requiredHint = card.querySelector(".event-comment-required");
+  if (requiredHint) {
+    requiredHint.classList.toggle("hidden", opt?.dataset.requiresComment !== "1");
+  }
+});
+
+// Duration: clamp negative values client-side (server also enforces this).
+document.addEventListener("input", function (e) {
+  if (!e.target.matches("input[name$='-duration_minutes']")) return;
+  if (e.target.value !== "" && parseInt(e.target.value, 10) < 0) {
+    e.target.value = 0;
+  }
+});
+
+</script>
+{% endblock %}

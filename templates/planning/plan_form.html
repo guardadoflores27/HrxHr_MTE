@@ -1,0 +1,565 @@
+{% extends "base.html" %}
+
+{% block title %}{{ action }} Plan — MTE Hr×Hr{% endblock %}
+{% block page_title %}{{ action }} Daily Plan{% endblock %}
+
+{% block extra_head %}
+<style>
+  /* ── Shift card selector ─────────────────────────────────────── */
+  .shift-cards { display: flex; gap: 10px; flex-wrap: wrap; }
+
+  .shift-card {
+    flex: 1; min-width: 120px;
+    display: flex; flex-direction: column; align-items: center;
+    gap: 6px; padding: 14px 10px;
+    border: 2px solid #e5e7eb;
+    border-radius: 12px;
+    cursor: pointer;
+    transition: border-color 0.15s, background 0.15s, box-shadow 0.15s;
+    background: #fff;
+    user-select: none;
+  }
+
+  .shift-card:hover {
+    border-color: #93c5fd;
+    background: #eff6ff;
+  }
+
+  .shift-card.selected {
+    border-color: #2563eb;
+    background: #eff6ff;
+    box-shadow: 0 0 0 3px rgba(37,99,235,0.15);
+  }
+
+  /* Shift color accents */
+  .shift-card[data-accent="morning"].selected {
+    border-color: #d97706;
+    background:#fffbeb;
+    box-shadow:0 0 0 3px rgba(217,119,6,0.15);
+  }
+
+  .shift-card[data-accent="afternoon"].selected {
+    border-color: #7c3aed;
+    background:#f5f3ff;
+    box-shadow:0 0 0 3px rgba(124,58,237,0.15);
+  }
+
+  .shift-card[data-accent="night"].selected {
+    border-color: #1d4ed8;
+    background:#eff6ff;
+    box-shadow:0 0 0 3px rgba(29,78,216,0.15);
+  }
+
+  .shift-card .shift-icon {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1rem;
+    background: #f1f5f9;
+    transition: background 0.15s, color 0.15s;
+  }
+
+  .shift-card.selected .shift-icon {
+    background: #dbeafe;
+    color: #2563eb;
+  }
+
+  .shift-card[data-accent="morning"].selected .shift-icon {
+    background:#fef3c7;
+    color:#d97706;
+  }
+
+  .shift-card[data-accent="afternoon"].selected .shift-icon {
+    background:#ede9fe;
+    color:#7c3aed;
+  }
+
+  .shift-card[data-accent="night"].selected .shift-icon {
+    background:#dbeafe;
+    color:#1d4ed8;
+  }
+
+  .shift-card .shift-name {
+    font-size: 0.82rem;
+    font-weight: 700;
+    color: #374151;
+    line-height: 1;
+  }
+
+  .shift-card .shift-time {
+    font-size: 0.7rem;
+    color: #6b7280;
+    font-family: 'JetBrains Mono', monospace;
+  }
+
+  .shift-card .shift-badge {
+    font-size: 0.6rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    padding: 2px 6px;
+    border-radius: 999px;
+    background: #f3f4f6;
+    color: #6b7280;
+  }
+
+  .shift-card.selected .shift-badge {
+    background: #dbeafe;
+    color: #1d4ed8;
+  }
+
+  .shift-card[data-accent="morning"].selected .shift-badge {
+    background:#fef3c7;
+    color:#92400e;
+  }
+
+  .shift-card[data-accent="afternoon"].selected .shift-badge {
+    background:#ede9fe;
+    color:#5b21b6;
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="max-w-xl">
+  <div class="bg-white rounded-xl border border-gray-200 shadow-sm p-6">
+
+    <form method="post" novalidate id="plan-form">
+      {% csrf_token %}
+
+      <div class="space-y-5">
+
+        {# Date #}
+        <div>
+          <label class="block text-xs font-semibold text-gray-600 mb-1.5 uppercase tracking-wide">
+            Date <span class="text-red-400">*</span>
+          </label>
+
+          {{ form.date }}
+
+          {% if form.date.errors %}
+          <p class="text-xs text-red-500 mt-1">
+            {{ form.date.errors.0 }}
+          </p>
+          {% endif %}
+        </div>
+
+        {# Work Center + Subprocess #}
+        <div class="grid grid-cols-2 gap-3">
+
+          <div>
+            <label class="block text-xs font-semibold text-gray-600 mb-1.5 uppercase tracking-wide">
+              Work Center <span class="text-red-400">*</span>
+            </label>
+
+            {{ form.work_center }}
+
+            {% if form.work_center.errors %}
+            <p class="text-xs text-red-500 mt-1">
+              {{ form.work_center.errors.0 }}
+            </p>
+            {% endif %}
+          </div>
+
+          <div>
+            <label class="block text-xs font-semibold text-gray-600 mb-1.5 uppercase tracking-wide">
+              Subprocess <span class="text-red-400">*</span>
+            </label>
+
+            {{ form.subprocess }}
+
+            {% if form.subprocess.errors %}
+            <p class="text-xs text-red-500 mt-1">
+              {{ form.subprocess.errors.0 }}
+            </p>
+            {% endif %}
+          </div>
+
+        </div>
+
+        {# Headcount #}
+        <div>
+          <label class="block text-xs font-semibold text-gray-600 mb-1.5 uppercase tracking-wide">
+            Headcount <span class="text-red-400">*</span>
+          </label>
+
+          {{ form.headcount }}
+
+          {% if form.headcount.errors %}
+          <p class="text-xs text-red-500 mt-1">
+            {{ form.headcount.errors.0 }}
+          </p>
+          {% endif %}
+        </div>
+
+        {# ── Shift selector ───────────────────────────────────── #}
+        <div>
+
+          <label class="block text-xs font-semibold text-gray-600 mb-2 uppercase tracking-wide">
+            Shift <span class="text-red-400">*</span>
+          </label>
+
+          <div class="hidden">
+            {{ form.shift }}
+          </div>
+
+          {% if form.shift.errors %}
+          <p class="text-xs text-red-500 mb-2">
+            {{ form.shift.errors.0 }}
+          </p>
+          {% endif %}
+
+          {% if not active_shifts %}
+
+          <div class="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700">
+            <i class="fas fa-triangle-exclamation mr-1.5"></i>
+
+            No active shifts available.
+
+            {% if user.profile.role in 'admin,engineer' %}
+            <a href="{% url 'core:shift_create' %}"
+               class="underline font-medium">
+              Create one
+            </a>.
+            {% endif %}
+          </div>
+
+          {% else %}
+
+          <div class="shift-cards" id="shift-cards">
+
+            {% for shift in active_shifts %}
+
+            {% with sh_hour=shift.start_time.hour %}
+
+            {% if sh_hour >= 5 and sh_hour < 14 %}
+
+            {% with icon="fa-sun" accent="morning" %}
+            <div class="shift-card {% if form.instance.shift_id == shift.id %}selected{% endif %}"
+                 data-shift-id="{{ shift.id }}"
+                 data-accent="{{ accent }}"
+                 data-days="{{ shift.days_of_week|join:',' }}"
+                 onclick="selectShift({{ shift.id }}, this)">
+
+              <div class="shift-icon">
+                <i class="fas {{ icon }}"></i>
+              </div>
+
+              <span class="shift-name">{{ shift.name }}</span>
+
+              <span class="shift-time mono">
+                {{ shift.start_time|time:"g:i A" }} – {{ shift.end_time|time:"g:i A" }}
+              </span>
+
+              <span class="shift-badge">
+                {{ shift.code }}
+              </span>
+
+            </div>
+            {% endwith %}
+
+            {% elif sh_hour >= 14 and sh_hour < 22 %}
+
+            {% with icon="fa-cloud-sun" accent="afternoon" %}
+            <div class="shift-card {% if form.instance.shift_id == shift.id %}selected{% endif %}"
+                 data-shift-id="{{ shift.id }}"
+                 data-accent="{{ accent }}"
+                 data-days="{{ shift.days_of_week|join:',' }}"
+                 onclick="selectShift({{ shift.id }}, this)">
+
+              <div class="shift-icon">
+                <i class="fas {{ icon }}"></i>
+              </div>
+
+              <span class="shift-name">{{ shift.name }}</span>
+
+              <span class="shift-time mono">
+                {{ shift.start_time|time:"g:i A" }} – {{ shift.end_time|time:"g:i A" }}
+              </span>
+
+              <span class="shift-badge">
+                {{ shift.code }}
+              </span>
+
+            </div>
+            {% endwith %}
+
+            {% else %}
+
+            {% with icon="fa-moon" accent="night" %}
+            <div class="shift-card {% if form.instance.shift_id == shift.id %}selected{% endif %}"
+                 data-shift-id="{{ shift.id }}"
+                 data-accent="{{ accent }}"
+                 data-days="{{ shift.days_of_week|join:',' }}"
+                 onclick="selectShift({{ shift.id }}, this)">
+
+              <div class="shift-icon">
+                <i class="fas {{ icon }}"></i>
+              </div>
+
+              <span class="shift-name">{{ shift.name }}</span>
+
+              <span class="shift-time mono">
+                {{ shift.start_time|time:"g:i A" }} – {{ shift.end_time|time:"g:i A" }}
+              </span>
+
+              <span class="shift-badge">
+                {{ shift.code }}
+              </span>
+
+            </div>
+            {% endwith %}
+
+            {% endif %}
+            {% endwith %}
+            {% endfor %}
+
+          </div>
+
+          {% endif %}
+
+          {# Aviso cuando ningún turno aplica para el día seleccionado #}
+          <div id="no-shifts-day-notice"
+               class="hidden mt-2 rounded-lg border border-amber-200 bg-amber-50
+                      px-4 py-3 text-sm text-amber-700">
+            <i class="fas fa-triangle-exclamation mr-1.5"></i>
+            No hay turnos configurados para <strong id="no-shifts-day-name"></strong>.
+            <a href="{% url 'core:shift_list' %}" class="underline font-medium ml-1">
+              Configurar turnos →
+            </a>
+          </div>
+
+          {% if form.non_field_errors %}
+          <div class="mt-3 rounded-lg border border-red-200 bg-red-50 px-4 py-2.5 text-sm text-red-700">
+            <i class="fas fa-circle-xmark mr-1.5"></i>
+            {{ form.non_field_errors.0 }}
+          </div>
+          {% endif %}
+
+        </div>
+
+      </div>
+
+      {# Buttons #}
+      <div class="flex items-center gap-3 mt-6 pt-5 border-t border-gray-100">
+
+        <button type="submit"
+                class="bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold px-5 py-2.5 rounded-lg transition">
+
+          <i class="fas fa-save mr-1.5"></i>{{ action }}
+
+        </button>
+
+        <a href="{% url 'planning:daily_plan_list' %}"
+           class="text-sm text-gray-500 hover:text-gray-800 px-4 py-2.5 rounded-lg border border-gray-200 hover:border-gray-300 transition">
+
+          Cancel
+
+        </a>
+
+      </div>
+
+    </form>
+
+  </div>
+</div>
+
+<script>
+(function () {
+
+  const wcSelect  = document.getElementById("id_work_center");
+  const spSelect  = document.getElementById("id_subprocess");
+  const apiUrl    = "{% url 'planning:subprocess_by_workcenter' %}";
+  const previousSp = "{{ form.instance.subprocess_id|default:'' }}";
+
+  function loadSubprocesses(wcId, selectValue) {
+
+    if (!wcId) {
+      spSelect.innerHTML = '<option value="">---------</option>';
+      spSelect.disabled  = true;
+      return;
+    }
+
+    spSelect.disabled  = true;
+    spSelect.innerHTML = '<option value="">Loading...</option>';
+
+    fetch(`${apiUrl}?work_center_id=${wcId}`, {
+      headers: { "X-Requested-With": "XMLHttpRequest" }
+    })
+
+    .then(r => r.json())
+
+    .then(data => {
+
+      spSelect.innerHTML = '<option value="">---------</option>';
+
+      if (!data.subprocesses.length) {
+        spSelect.innerHTML = '<option value="">No subprocesses available</option>';
+        spSelect.disabled  = true;
+        return;
+      }
+
+      data.subprocesses.forEach(sp => {
+
+        const opt = document.createElement("option");
+
+        opt.value = sp.id;
+        opt.textContent = sp.name;
+
+        if (String(sp.id) === String(selectValue)) {
+          opt.selected = true;
+        }
+
+        spSelect.appendChild(opt);
+
+      });
+
+      spSelect.disabled = false;
+
+    })
+
+    .catch(() => {
+
+      spSelect.innerHTML = '<option value="">Failed to load</option>';
+      spSelect.disabled  = true;
+
+    });
+  }
+
+  wcSelect.addEventListener("change", function () {
+    loadSubprocesses(this.value, null);
+  });
+
+  if (wcSelect.value) {
+    loadSubprocesses(wcSelect.value, previousSp);
+  }
+  else {
+    spSelect.innerHTML = '<option value="">Select a Work Center first</option>';
+    spSelect.disabled = true;
+  }
+
+})();
+
+function selectShift(shiftId, cardEl) {
+  document.querySelectorAll(".shift-card")
+    .forEach(c => c.classList.remove("selected"));
+  cardEl.classList.add("selected");
+  const sel = document.getElementById("id_shift");
+  if (sel) sel.value = shiftId;
+}
+
+// ── Filtrar turnos según el día de la semana de la fecha elegida ──────────────
+(function () {
+  const dateInput = document.getElementById("id_date");
+  const DAY_NAMES = ['Lunes','Martes','Miércoles','Jueves','Viernes','Sábado','Domingo'];
+
+  function filterShifts() {
+    const val     = dateInput?.value;
+    const cards   = document.querySelectorAll(".shift-card");
+    const notice  = document.getElementById("no-shifts-day-notice");
+    const daySpan = document.getElementById("no-shifts-day-name");
+    const shiftSel = document.getElementById("id_shift");
+
+    if (!val) {
+      // Sin fecha: mostrar todos
+      cards.forEach(c => { c.style.display = ""; c.style.opacity = ""; c.style.pointerEvents = ""; });
+      if (notice) notice.classList.add("hidden");
+      return;
+    }
+
+    // JS getDay(): 0=Dom, 1=Lun … 6=Sáb  →  Python weekday(): 0=Lun … 6=Dom
+    const jsDay = new Date(val + "T00:00:00").getDay();
+    const pyDay = (jsDay + 6) % 7;   // 0=Lun … 6=Dom
+
+    let visible = 0;
+
+    cards.forEach(card => {
+      const rawDays = card.dataset.days || "";
+      // Si days_of_week está vacío → turno sin días configurados, se muestra siempre
+      const applies = rawDays === "" ||
+        rawDays.split(",").map(Number).includes(pyDay);
+
+      if (applies) {
+        card.style.display = "";
+        card.style.opacity = "";
+        card.style.pointerEvents = "";
+        visible++;
+      } else {
+        card.style.display = "none";
+        // Si este turno estaba seleccionado, deseleccionarlo
+        if (shiftSel && card.dataset.shiftId === shiftSel.value) {
+          card.classList.remove("selected");
+          shiftSel.value = "";
+        }
+      }
+    });
+
+    // Mostrar u ocultar aviso
+    if (notice && daySpan) {
+      if (visible === 0) {
+        daySpan.textContent = DAY_NAMES[pyDay];
+        notice.classList.remove("hidden");
+      } else {
+        notice.classList.add("hidden");
+      }
+    }
+  }
+
+  if (dateInput) {
+    dateInput.addEventListener("change", filterShifts);
+    // Ejecutar al cargar si ya hay fecha (edición de plan existente)
+    if (dateInput.value) filterShifts();
+  }
+})();
+
+(function () {
+
+  const sel = document.getElementById("id_shift");
+
+  if (!sel || !sel.value) return;
+
+  const card = document.querySelector(
+    `.shift-card[data-shift-id="${sel.value}"]`
+  );
+
+  if (card) {
+    card.classList.add("selected");
+  }
+
+})();
+
+document.getElementById("plan-form")
+  .addEventListener("submit", function (e) {
+
+    const sel = document.getElementById("id_shift");
+
+    if (!sel || !sel.value) {
+
+      e.preventDefault();
+
+      let err = document.getElementById("shift-required-err");
+
+      if (!err) {
+
+        err = document.createElement("p");
+
+        err.id = "shift-required-err";
+        err.className = "text-xs text-red-500 mt-2";
+
+        err.textContent = "Please select a shift before saving.";
+
+        document.getElementById("shift-cards")?.after(err);
+      }
+
+      err.scrollIntoView({
+        behavior: "smooth",
+        block: "center"
+      });
+    }
+});
+</script>
+
+{% endblock %}

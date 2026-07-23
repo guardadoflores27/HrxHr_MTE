@@ -1,0 +1,23 @@
+# Optional: lets Render create the service from this file (Blueprint).
+# You can also configure everything by hand in the dashboard instead.
+services:
+  - type: web
+    name: mte-hrxhr
+    runtime: python
+    buildCommand: "./build.sh"
+    startCommand: "gunicorn hrxhr_project.wsgi:application"
+    envVars:
+      - key: SECRET_KEY
+        generateValue: true          # Render generates a strong random key
+      - key: DEBUG
+        value: "False"
+      - key: PYTHON_VERSION
+        value: "3.12.0"
+      - key: DATABASE_URL
+        fromDatabase:
+          name: mte-db
+          property: connectionString
+
+databases:
+  - name: mte-db
+    plan: free

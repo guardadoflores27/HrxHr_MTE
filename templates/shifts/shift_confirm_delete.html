@@ -1,0 +1,99 @@
+{# templates/shifts/shift_confirm_delete.html #}
+{% extends "base.html" %}
+
+{% block title %}Delete Shift — MTE Hr×Hr{% endblock %}
+{% block page_title %}Delete Shift{% endblock %}
+
+{% block content %}
+<div class="max-w-lg">
+  <div class="bg-white rounded-xl border {% if blocked %}border-amber-200{% else %}border-red-200{% endif %} shadow-sm p-6">
+
+    {# Shift summary card #}
+    <div class="flex items-center gap-4 mb-6 p-4 bg-gray-50 rounded-xl border border-gray-100">
+      <div class="w-12 h-12 rounded-full bg-slate-200 flex items-center justify-center flex-shrink-0">
+        {% with h=shift.start_time.hour %}
+        {% if h >= 5 and h < 14 %}
+          <i class="fas fa-sun text-amber-500 text-lg"></i>
+        {% elif h >= 14 and h < 22 %}
+          <i class="fas fa-cloud-sun text-violet-500 text-lg"></i>
+        {% else %}
+          <i class="fas fa-moon text-slate-500 text-lg"></i>
+        {% endif %}
+        {% endwith %}
+      </div>
+      <div>
+        <p class="font-bold text-gray-800">{{ shift.name }}</p>
+        <p class="mono text-sm text-gray-500">{{ shift.duration_display }}</p>
+        <span class="mono text-xs bg-gray-200 text-gray-500 px-2 py-0.5 rounded-full">{{ shift.code }}</span>
+      </div>
+    </div>
+
+    {% if blocked %}
+    {# ── Blocked: plans reference this shift ─────────────────── #}
+    <div class="flex items-start gap-3 rounded-xl bg-amber-50 border border-amber-200 px-5 py-4 mb-5">
+      <i class="fas fa-triangle-exclamation text-amber-500 mt-0.5 flex-shrink-0"></i>
+      <div>
+        <p class="text-sm font-semibold text-amber-800 mb-1">Cannot Delete Shift</p>
+        <p class="text-sm text-amber-700">
+          This shift is currently referenced by <strong>{{ blocking|length }}</strong> Daily Plan(s).
+          Remove or reassign those plans before deleting this shift.
+        </p>
+      </div>
+    </div>
+
+    <div class="space-y-2 mb-5 max-h-48 overflow-y-auto">
+      {% for plan in blocking %}
+      <div class="flex items-center gap-3 text-xs bg-white rounded-lg border border-gray-100 px-3 py-2">
+        <i class="fas fa-calendar-days text-gray-300"></i>
+        <span class="font-semibold text-gray-700">{{ plan.date }}</span>
+        <span class="text-gray-400">·</span>
+        <span class="text-gray-600">{{ plan.work_center.name }}</span>
+        <span class="text-gray-400">·</span>
+        <span class="text-gray-600">{{ plan.subprocess.name }}</span>
+      </div>
+      {% endfor %}
+    </div>
+
+    <p class="text-xs text-gray-400 mb-5">
+      Alternatively, you can <strong>deactivate</strong> this shift to hide it from selectors without removing existing plans.
+    </p>
+
+    <div class="flex gap-3">
+      <a href="{% url 'core:shift_update' shift.pk %}"
+         class="flex-1 text-center bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold px-5 py-2.5 rounded-lg transition">
+        <i class="fas fa-pen-to-square mr-1.5"></i> Edit / Deactivate
+      </a>
+      <a href="{% url 'core:shift_list' %}"
+         class="flex-1 text-center border border-gray-200 text-gray-600 hover:bg-gray-50 text-sm font-semibold px-5 py-2.5 rounded-lg transition">
+        Back
+      </a>
+    </div>
+
+    {% else %}
+    {# ── Safe to delete ──────────────────────────────────────── #}
+    <div class="flex items-start gap-3 rounded-xl bg-red-50 border border-red-200 px-5 py-4 mb-6">
+      <i class="fas fa-circle-exclamation text-red-400 mt-0.5 flex-shrink-0"></i>
+      <p class="text-sm text-red-700">
+        Are you sure you want to delete the shift <strong>{{ shift.name }}</strong>?
+        This action is permanent and cannot be undone.
+      </p>
+    </div>
+
+    <div class="flex gap-3">
+      <form method="post" class="flex-1">
+        {% csrf_token %}
+        <button type="submit"
+                class="w-full bg-red-600 hover:bg-red-700 text-white text-sm font-semibold px-5 py-2.5 rounded-lg transition">
+          <i class="fas fa-trash mr-1.5"></i> Yes, Delete
+        </button>
+      </form>
+      <a href="{% url 'core:shift_list' %}"
+         class="flex-1 text-center border border-gray-200 text-gray-600 hover:bg-gray-50 text-sm font-semibold px-5 py-2.5 rounded-lg transition">
+        Cancel
+      </a>
+    </div>
+    {% endif %}
+
+  </div>
+</div>
+{% endblock %}

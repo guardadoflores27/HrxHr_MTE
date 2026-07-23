@@ -1,0 +1,233 @@
+{# templates/shifts/shift_list.html #}
+{% extends "base.html" %}
+
+{% block title %}Shifts — MTE Hr×Hr{% endblock %}
+{% block page_title %}Shift Management{% endblock %}
+
+{% block header_actions %}
+<a href="{% url 'core:shift_create' %}"
+   class="inline-flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold px-4 py-2 rounded-lg transition shadow-sm">
+  <i class="fas fa-plus"></i> New Shift
+</a>
+{% endblock %}
+
+{% block content %}
+
+{# ── Info banner ─────────────────────────────────────────────────── #}
+<div class="mb-5 rounded-xl border border-blue-100 bg-blue-50 px-5 py-4 flex items-start gap-3">
+  <i class="fas fa-circle-info text-blue-400 mt-0.5 flex-shrink-0"></i>
+  <div class="text-sm text-blue-700">
+    <span class="font-semibold">Active shifts</span> appear as selectable options when creating Daily Plans.
+    Deactivating a shift hides it from selectors without removing existing plans.
+  </div>
+</div>
+
+{# ── Filter bar ──────────────────────────────────────────────────── #}
+<form method="get" class="flex items-center gap-3 mb-5">
+
+  <div class="flex-1 relative">
+    <i class="fas fa-magnifying-glass absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm"></i>
+
+    <input type="text"
+           name="q"
+           value="{{ search }}"
+           placeholder="Search by name or code..."
+           class="w-full pl-9 pr-4 py-2 rounded-lg border border-gray-200 text-sm shadow-sm focus:outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-400">
+  </div>
+
+  <select name="status"
+          class="rounded-lg border border-gray-200 px-3 py-2 text-sm shadow-sm bg-white focus:outline-none focus:border-blue-400"
+          onchange="this.form.submit()">
+
+    <option value="">All</option>
+
+    <option value="active"
+            {% if status == "active" %}selected{% endif %}>
+      Active
+    </option>
+
+    <option value="inactive"
+            {% if status == "inactive" %}selected{% endif %}>
+      Inactive
+    </option>
+
+  </select>
+
+  <button type="submit"
+          class="bg-gray-800 hover:bg-gray-700 text-white text-sm font-semibold px-4 py-2 rounded-lg transition">
+    Filter
+  </button>
+
+  {% if search or status %}
+  <a href="{% url 'core:shift_list' %}"
+     class="text-sm text-gray-400 hover:text-gray-700 border border-gray-200 px-3 py-2 rounded-lg transition">
+    Clear
+  </a>
+  {% endif %}
+
+</form>
+
+{# ── Shifts grid ─────────────────────────────────────────────────── #}
+{% if shifts %}
+
+<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+
+  {% for shift in shifts %}
+  <div class="bg-white rounded-xl border {% if shift.is_active %}border-gray-200{% else %}border-gray-100 opacity-60{% endif %} shadow-sm p-5 flex flex-col gap-3">
+
+    {# Header row #}
+    <div class="flex items-start justify-between gap-2">
+
+      <div class="flex items-center gap-3">
+
+        {# Icon based on start hour #}
+        {% with h=shift.start_time.hour %}
+
+        <div class="w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0
+          {% if h >= 5 and h < 14 %}bg-amber-100 text-amber-600
+          {% elif h >= 14 and h < 22 %}bg-violet-100 text-violet-600
+          {% else %}bg-slate-200 text-slate-600{% endif %}">
+
+          {% if h >= 5 and h < 14 %}
+            <i class="fas fa-sun"></i>
+          {% elif h >= 14 and h < 22 %}
+            <i class="fas fa-cloud-sun"></i>
+          {% else %}
+            <i class="fas fa-moon"></i>
+          {% endif %}
+
+        </div>
+
+        {% endwith %}
+
+        <div>
+          <p class="text-sm font-bold text-gray-800 leading-tight">
+            {{ shift.name }}
+          </p>
+
+          <span class="inline-flex items-center mono text-[11px] font-semibold text-gray-500
+                       bg-gray-100 px-2 py-0.5 rounded-full mt-0.5">
+            {{ shift.code }}
+          </span>
+        </div>
+
+      </div>
+
+      {# Active badge #}
+      <span class="inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-full flex-shrink-0
+        {% if shift.is_active %}bg-emerald-100 text-emerald-700{% else %}bg-gray-100 text-gray-400{% endif %}">
+
+        <span class="w-1.5 h-1.5 rounded-full
+          {% if shift.is_active %}bg-emerald-500{% else %}bg-gray-300{% endif %}"></span>
+
+        {% if shift.is_active %}
+          Active
+        {% else %}
+          Inactive
+        {% endif %}
+
+      </span>
+
+    </div>
+
+    {# Days of week badges #}
+    {% if shift.days_of_week %}
+    <div class="flex flex-wrap gap-1">
+      {% for day in shift.days_display %}
+      <span class="inline-flex items-center text-[10px] font-bold px-1.5 py-0.5 rounded
+                   {% if day == 'Sáb' or day == 'Dom' %}
+                     bg-violet-50 text-violet-600 border border-violet-100
+                   {% else %}
+                     bg-blue-50 text-blue-600 border border-blue-100
+                   {% endif %}">
+        {{ day }}
+      </span>
+      {% endfor %}
+    </div>
+    {% else %}
+    <p class="text-[11px] text-gray-300 italic">Sin días asignados</p>
+    {% endif %}
+
+    {# Time display #}
+    <div class="flex items-center gap-2 bg-gray-50 rounded-lg px-3 py-2.5">
+
+      <i class="fas fa-clock text-gray-400 text-xs"></i>
+
+      <span class="mono text-sm font-semibold text-gray-700">
+        {{ shift.duration_display }}
+      </span>
+
+      {% if shift.crosses_midnight %}
+      <span class="ml-auto text-xs text-indigo-600 font-medium bg-indigo-50 px-2 py-0.5 rounded-full">
+        <i class="fas fa-arrow-right-arrow-left text-[10px] mr-1"></i>
+        Crosses Midnight
+      </span>
+      {% endif %}
+
+    </div>
+
+    {# Action buttons #}
+    <div class="flex items-center gap-2 pt-1 border-t border-gray-50">
+
+      <a href="{% url 'core:shift_update' shift.pk %}"
+         class="flex-1 text-center text-xs font-semibold text-blue-600 hover:text-blue-800
+                bg-blue-50 hover:bg-blue-100 rounded-lg py-2 transition">
+
+        <i class="fas fa-pen-to-square mr-1"></i> Edit
+
+      </a>
+
+      <a href="{% url 'core:shift_delete' shift.pk %}"
+         class="flex-1 text-center text-xs font-semibold text-red-500 hover:text-red-700
+                bg-red-50 hover:bg-red-100 rounded-lg py-2 transition">
+
+        <i class="fas fa-trash mr-1"></i> Delete
+
+      </a>
+
+    </div>
+
+  </div>
+  {% endfor %}
+
+</div>
+
+{# Summary #}
+<p class="mt-4 text-xs text-gray-400">
+  {{ total }} shift{% if total != 1 %}s{% endif %} total
+  · {{ shifts|length }} shown
+</p>
+
+{% else %}
+
+{# Empty state #}
+<div class="flex flex-col items-center py-24 text-center">
+
+  <div class="w-16 h-16 rounded-full bg-gray-100 flex items-center justify-center mb-5">
+    <i class="fas fa-clock text-gray-300 text-3xl"></i>
+  </div>
+
+  <p class="text-base font-semibold text-gray-400 mb-1">
+    No shifts{% if search or status %} found{% endif %}
+  </p>
+
+  <p class="text-sm text-gray-300 mb-6">
+    {% if search or status %}
+      Try another filter.
+    {% else %}
+      Create your first shift to get started.
+    {% endif %}
+  </p>
+
+  <a href="{% url 'core:shift_create' %}"
+     class="inline-flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold px-5 py-2.5 rounded-lg transition">
+
+    <i class="fas fa-plus"></i> Create Shift
+
+  </a>
+
+</div>
+
+{% endif %}
+
+{% endblock %}

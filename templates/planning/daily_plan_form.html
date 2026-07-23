@@ -1,0 +1,146 @@
+{# templates/planning/plan_form.html #}
+{% extends "base.html" %}
+
+{% block title %}{{ action }} Plan — MTE Hr×Hr{% endblock %}
+{% block page_title %}{{ action }} Daily Plan{% endblock %}
+
+{% block content %}
+<div class="max-w-5xl">
+  <div class="bg-white rounded-xl border border-gray-200 shadow-sm p-8">
+    <form method="post" novalidate>
+      {% csrf_token %}
+
+      <div class="space-y-5">
+
+        {# Date #}
+        <div>
+          <label class="block text-xs font-semibold text-gray-600 mb-1.5 uppercase tracking-wide">
+            Date <span class="text-red-400">*</span>
+          </label>
+          {{ form.date }}
+          {% if form.date.errors %}
+          <p class="text-xs text-red-500 mt-1">{{ form.date.errors.0 }}</p>
+          {% endif %}
+        </div>
+
+        {# Work Center + Subprocess #}
+        <div class="grid grid-cols-2 gap-5">
+          <div>
+            <label class="block text-xs font-semibold text-gray-600 mb-1.5 uppercase tracking-wide">
+              Work Center <span class="text-red-400">*</span>
+            </label>
+            {{ form.work_center }}
+            {% if form.work_center.errors %}
+            <p class="text-xs text-red-500 mt-1">{{ form.work_center.errors.0 }}</p>
+            {% endif %}
+          </div>
+          <div>
+            <label class="block text-xs font-semibold text-gray-600 mb-1.5 uppercase tracking-wide">
+              Subprocess <span class="text-red-400">*</span>
+            </label>
+            {{ form.subprocess }}
+            {% if form.subprocess.errors %}
+            <p class="text-xs text-red-500 mt-1">{{ form.subprocess.errors.0 }}</p>
+            {% endif %}
+          </div>
+        </div>
+
+        {# Headcount #}
+        <div>
+          <label class="block text-xs font-semibold text-gray-600 mb-1.5 uppercase tracking-wide">
+            Headcount <span class="text-red-400">*</span>
+          </label>
+          {{ form.headcount }}
+          {% if form.headcount.errors %}
+          <p class="text-xs text-red-500 mt-1">{{ form.headcount.errors.0 }}</p>
+          {% endif %}
+        </div>
+
+        {# Shift times #}
+        <div class="grid grid-cols-2 gap-5">
+          <div>
+            <label class="block text-xs font-semibold text-gray-600 mb-1.5 uppercase tracking-wide">
+              Shift Start <span class="text-red-400">*</span>
+            </label>
+            {{ form.shift_start_time }}
+          </div>
+          <div>
+            <label class="block text-xs font-semibold text-gray-600 mb-1.5 uppercase tracking-wide">
+              Shift End <span class="text-red-400">*</span>
+            </label>
+            {{ form.shift_end_time }}
+          </div>
+        </div>
+      </div>
+
+      {# Buttons #}
+      <div class="flex items-center gap-3 mt-8 pt-6 border-t border-gray-100">
+        <button type="submit"
+                class="bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold px-6 py-2.5 rounded-lg transition">
+          <i class="fas fa-save mr-1.5"></i>{{ action }}
+        </button>
+        <a href="{% url 'planning:daily_plan_list' %}"
+           class="text-sm text-gray-500 hover:text-gray-800 px-5 py-2.5 rounded-lg border border-gray-200 hover:border-gray-300 transition">
+          Cancel
+        </a>
+      </div>
+    </form>
+  </div>
+</div>
+
+{# ── Dynamic Subprocess filter by Work Center ── #}
+<script>
+(function () {
+  const wcSelect = document.getElementById("id_work_center");
+  const spSelect = document.getElementById("id_subprocess");
+  const apiUrl   = "{% url 'planning:subprocess_by_workcenter' %}";
+  const previousSp = "{{ form.instance.subprocess_id|default:'' }}";
+
+  function loadSubprocesses(wcId, selectValue) {
+    if (!wcId) {
+      spSelect.innerHTML = '<option value="">---------</option>';
+      spSelect.disabled  = true;
+      return;
+    }
+    spSelect.disabled  = true;
+    spSelect.innerHTML = '<option value="">Cargando…</option>';
+
+    fetch(`${apiUrl}?work_center_id=${wcId}`, {
+      headers: { "X-Requested-With": "XMLHttpRequest" }
+    })
+      .then(r => r.json())
+      .then(data => {
+        spSelect.innerHTML = '<option value="">---------</option>';
+        if (data.subprocesses.length === 0) {
+          spSelect.innerHTML = '<option value="">Sin subprocesos</option>';
+          spSelect.disabled  = true;
+          return;
+        }
+        data.subprocesses.forEach(sp => {
+          const opt       = document.createElement("option");
+          opt.value       = sp.id;
+          opt.textContent = sp.name;
+          if (String(sp.id) === String(selectValue)) opt.selected = true;
+          spSelect.appendChild(opt);
+        });
+        spSelect.disabled = false;
+      })
+      .catch(() => {
+        spSelect.innerHTML = '<option value="">Error al cargar</option>';
+        spSelect.disabled  = true;
+      });
+  }
+
+  wcSelect.addEventListener("change", function () {
+    loadSubprocesses(this.value, null);
+  });
+
+  if (wcSelect.value) {
+    loadSubprocesses(wcSelect.value, previousSp);
+  } else {
+    spSelect.innerHTML = '<option value="">Select a Work Center first Center</option>';
+    spSelect.disabled  = true;
+  }
+})();
+</script>
+{% endblock %}

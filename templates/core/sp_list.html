@@ -1,0 +1,288 @@
+{# templates/core/sp_list.html #}
+{# ─────────────────────────────────────────────────────────────────────────── #}
+{# hrxhr_project/templates/core/sp_list.html                     #}
+{# ─────────────────────────────────────────────────────────────────────────── #}
+{% extends "base.html" %}
+
+{% block title %}Subprocesses — MTE Hr×Hr{% endblock %}
+{% block page_title %}Subprocesses{% endblock %}
+
+{% block header_actions %}
+<a href="{% url 'core:sp_create' %}"
+   class="inline-flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white
+          text-xs font-semibold px-3.5 py-2 rounded-lg transition">
+  <i class="fas fa-plus text-xs"></i> New Subprocess
+</a>
+{% endblock %}
+
+{% block content %}
+
+{# ── Filter bar ────────────────────────────────────────────────────────────── #}
+<form method="get" class="bg-white rounded-xl border border-gray-200 shadow-sm px-5 py-4 mb-4">
+  <div class="flex flex-wrap items-end gap-3">
+
+    {# Work Center #}
+    <div class="flex flex-col gap-1 min-w-44">
+      <label class="text-xs font-semibold text-gray-500 uppercase tracking-wide">
+        <i class="fas fa-industry mr-1 text-gray-400"></i>Work Center
+      </label>
+      <select name="work_center"
+              class="rounded-lg border border-gray-300 px-3 py-1.5 text-sm shadow-sm
+                     focus:border-blue-500 focus:ring-1 focus:outline-none bg-white">
+        <option value="">— All —</option>
+        {% for wc in work_centers %}
+        <option value="{{ wc.id }}"
+          {% if filter.work_center == wc.id|stringformat:"s" %}selected{% endif %}>
+          {{ wc.name }}
+        </option>
+        {% endfor %}
+      </select>
+    </div>
+
+    {# Subprocess Type — dynamic from DB #}
+    <div class="flex flex-col gap-1 min-w-48">
+      <label class="text-xs font-semibold text-gray-500 uppercase tracking-wide">
+        <i class="fas fa-layer-group mr-1 text-gray-400"></i>Type
+      </label>
+      <select name="spt"
+              class="rounded-lg border border-gray-300 px-3 py-1.5 text-sm shadow-sm
+                     focus:border-blue-500 focus:ring-1 focus:outline-none bg-white">
+        <option value="">— All types —</option>
+        {% for spt in subprocess_types %}
+        <option value="{{ spt.id }}"
+          {% if filter.spt == spt.id|stringformat:"s" %}selected{% endif %}>
+          {{ spt.name }}
+          ({{ spt.get_applies_to_display }} · {{ spt.units_per_piece }}u/pc)
+        </option>
+        {% endfor %}
+      </select>
+    </div>
+
+    {# Name search #}
+    <div class="flex flex-col gap-1 min-w-48">
+      <label class="text-xs font-semibold text-gray-500 uppercase tracking-wide">
+        <i class="fas fa-magnifying-glass mr-1 text-gray-400"></i>Search
+      </label>
+      <input type="text" name="search" value="{{ filter.search }}"
+             placeholder="Search by name…"
+             class="rounded-lg border border-gray-300 px-3 py-1.5 text-sm shadow-sm
+                    focus:border-blue-500 focus:ring-1 focus:outline-none">
+    </div>
+
+    {# Buttons #}
+    <div class="flex gap-2 pb-0.5">
+      <button type="submit"
+              class="inline-flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white
+                     text-xs font-semibold px-4 py-2 rounded-lg transition">
+        <i class="fas fa-magnifying-glass text-xs"></i> Filter
+      </button>
+      {% if filter.work_center or filter.search or filter.spt %}
+      <a href="{% url 'core:sp_list' %}"
+         class="inline-flex items-center gap-1.5 text-xs font-semibold text-gray-500
+                hover:text-gray-800 border border-gray-200 hover:border-gray-300
+                px-4 py-2 rounded-lg transition">
+        <i class="fas fa-xmark text-xs"></i> Clear
+      </a>
+      {% endif %}
+    </div>
+
+  </div>
+
+  {# Active filter chips #}
+  {% if filter.work_center or filter.search or filter.spt %}
+  <div class="flex flex-wrap gap-2 mt-3 pt-3 border-t border-gray-100">
+    <span class="text-xs text-gray-400">Active filters:</span>
+    {% if filter.work_center %}
+    <span class="inline-flex items-center gap-1 bg-indigo-50 text-indigo-700 border border-indigo-200
+                 text-xs font-medium px-2 py-0.5 rounded-full">
+      <i class="fas fa-industry text-[10px]"></i>
+      {% for wc in work_centers %}{% if wc.id|stringformat:"s" == filter.work_center %}{{ wc.name }}{% endif %}{% endfor %}
+    </span>
+    {% endif %}
+    {% if filter.spt %}
+    <span class="inline-flex items-center gap-1 bg-violet-50 text-violet-700 border border-violet-200
+                 text-xs font-medium px-2 py-0.5 rounded-full">
+      <i class="fas fa-layer-group text-[10px]"></i>
+      {% for spt in subprocess_types %}{% if spt.id|stringformat:"s" == filter.spt %}{{ spt.name }}{% endif %}{% endfor %}
+    </span>
+    {% endif %}
+    {% if filter.search %}
+    <span class="inline-flex items-center gap-1 bg-blue-50 text-blue-700 border border-blue-200
+                 text-xs font-medium px-2 py-0.5 rounded-full">
+      <i class="fas fa-magnifying-glass text-[10px]"></i> "{{ filter.search }}"
+    </span>
+    {% endif %}
+  </div>
+  {% endif %}
+</form>
+
+{# ── Table ─────────────────────────────────────────────────────────────────── #}
+<div class="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+
+  <div class="px-5 py-3 border-b border-gray-100 flex items-center justify-between">
+    <p class="text-sm font-semibold text-gray-700">
+      {% if filter.work_center or filter.search or filter.spt %}Filtered results{% else %}All Subprocesses{% endif %}
+    </p>
+    <p class="text-xs text-gray-400 mono">
+      {{ subprocesses|length }} subprocess{{ subprocesses|length|pluralize:"es" }}
+    </p>
+  </div>
+
+  {% if subprocesses %}
+  <div class="overflow-x-auto">
+    <table class="min-w-full text-sm">
+      <thead>
+        <tr class="bg-gray-50 border-b border-gray-100">
+          <th class="px-4 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">
+            Name
+          </th>
+          <th class="px-4 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">
+            Work Center
+          </th>
+          <th class="px-4 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">
+            Type
+          </th>
+          <th class="px-4 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">
+            Applies to
+          </th>
+          <th class="px-4 py-2.5 text-center text-xs font-semibold text-gray-500 uppercase tracking-wide w-24">
+            Units/Piece
+          </th>
+          <th class="px-4 py-2.5 text-right text-xs font-semibold text-gray-500 uppercase tracking-wide w-20">
+            Actions
+          </th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-gray-50">
+        {% for sp in subprocesses %}
+        <tr class="transition-colors hover:bg-gray-50/60">
+
+          <td class="px-4 py-2.5 font-medium text-gray-900">{{ sp.name }}</td>
+
+          <td class="px-4 py-2.5">
+            <span class="inline-flex items-center gap-1.5 text-xs text-gray-600
+                         bg-gray-50 border border-gray-200 px-2 py-0.5 rounded-full font-medium">
+              <i class="fas fa-industry text-gray-400 text-[10px]"></i>
+              {{ sp.work_center.name }}
+            </span>
+          </td>
+
+          {# Type badge — dynamic color based on applies_to #}
+          <td class="px-4 py-2.5">
+            {% if sp.subprocess_type %}
+            <span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full
+                         text-xs font-semibold border
+                         {% if sp.subprocess_type.applies_to == 'reactores' %}
+                           bg-blue-50 text-blue-700 border-blue-200
+                         {% else %}
+                           bg-violet-50 text-violet-700 border-violet-200
+                         {% endif %}">
+              <span class="w-1.5 h-1.5 rounded-full
+                           {% if sp.subprocess_type.applies_to == 'reactores' %}bg-blue-400
+                           {% else %}bg-violet-400{% endif %}">
+              </span>
+              {{ sp.subprocess_type.name }}
+            </span>
+            {% else %}
+            <span class="text-xs text-gray-300 italic">— no type —</span>
+            {% endif %}
+          </td>
+
+          {# Applies to #}
+          <td class="px-4 py-2.5">
+            {% if sp.subprocess_type %}
+            <span class="text-xs text-gray-500">
+              {{ sp.subprocess_type.get_applies_to_display }}
+            </span>
+            {% endif %}
+          </td>
+
+          {# Units per piece #}
+          <td class="px-4 py-2.5 text-center">
+            {% if sp.subprocess_type %}
+            <span class="mono text-xs font-bold
+                         {% if sp.conversion_factor == 1 %}text-gray-400
+                         {% else %}text-amber-600{% endif %}">
+              {{ sp.conversion_factor }}
+            </span>
+            {% if sp.conversion_factor > 1 %}
+            <span class="text-[10px] text-gray-400 ml-0.5">u/pc</span>
+            {% endif %}
+            {% endif %}
+          </td>
+
+          <td class="px-4 py-2.5 text-right">
+            <div class="inline-flex gap-3">
+              <a href="{% url 'core:sp_update' sp.id %}"
+                 class="text-xs text-gray-400 hover:text-blue-600 transition"
+                 title="Edit">
+                <i class="fas fa-pen"></i>
+              </a>
+              <a href="{% url 'core:sp_delete' sp.id %}"
+                 class="text-xs text-gray-300 hover:text-red-500 transition"
+                 title="Delete">
+                <i class="fas fa-trash"></i>
+              </a>
+            </div>
+          </td>
+
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  {# Dynamic type legend — reads from DB #}
+  {% if subprocess_types %}
+  <div class="px-5 py-3 border-t border-gray-100 flex flex-wrap items-center gap-2">
+    <span class="text-xs text-gray-400 font-medium mr-1">Available types:</span>
+    {% for spt in subprocess_types %}
+    <a href="{% url 'core:sp_list' %}?spt={{ spt.id }}"
+       class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-semibold
+              border transition hover:shadow-sm
+              {% if spt.applies_to == 'reactores' %}
+                bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100
+              {% else %}
+                bg-violet-50 text-violet-700 border-violet-200 hover:bg-violet-100
+              {% endif %}"
+       title="{{ spt.get_applies_to_display }} · {{ spt.units_per_piece }}u/pc">
+      <span class="w-1.5 h-1.5 rounded-full
+                   {% if spt.applies_to == 'reactores' %}bg-blue-400{% else %}bg-violet-400{% endif %}">
+      </span>
+      {{ spt.name }}
+      <span class="opacity-60 font-normal">{{ spt.units_per_piece }}u</span>
+    </a>
+    {% endfor %}
+    {% if is_admin %}
+    <a href="{% url 'core:spt_list' %}"
+       class="inline-flex items-center gap-1 text-[11px] text-gray-400 hover:text-blue-600
+              font-medium transition ml-1">
+      <i class="fas fa-pen-to-square text-[9px]"></i> Manage types
+    </a>
+    {% endif %}
+  </div>
+  {% endif %}
+
+  {% else %}
+  <div class="flex flex-col items-center py-16 text-center">
+    <div class="w-12 h-12 rounded-full bg-gray-100 flex items-center justify-center mb-3">
+      {% if filter.work_center or filter.search or filter.spt %}
+        <i class="fas fa-filter text-gray-300 text-xl"></i>
+      {% else %}
+        <i class="fas fa-code-branch text-gray-300 text-xl"></i>
+      {% endif %}
+    </div>
+    {% if filter.work_center or filter.search or filter.spt %}
+      <p class="text-sm text-gray-400">No subprocesses match the applied filters.</p>
+      <a href="{% url 'core:sp_list' %}"
+         class="mt-3 text-sm text-blue-600 hover:underline font-medium">View all →</a>
+    {% else %}
+      <p class="text-sm text-gray-400">No subprocesses yet.</p>
+      <a href="{% url 'core:sp_create' %}"
+         class="mt-3 text-sm text-blue-600 hover:underline font-medium">Create first →</a>
+    {% endif %}
+  </div>
+  {% endif %}
+
+</div>
+{% endblock %}

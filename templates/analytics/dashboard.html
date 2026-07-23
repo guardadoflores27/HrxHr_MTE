@@ -1,0 +1,339 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}Analytics — MTE Hr×Hr{% endblock %}
+{% block page_title %}Operational Events Analytics{% endblock %}
+
+{% block extra_head %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+{% endblock %}
+
+{% block content %}
+<div class="p-6 space-y-6">
+
+  {# ── Filter bar ──────────────────────────────────────────────────────── #}
+  <form method="get" class="flex flex-wrap items-end gap-3 bg-white rounded-xl border border-slate-200 p-4">
+    <div>
+      <label class="block text-[11px] font-semibold uppercase tracking-wide text-slate-500 mb-1">From</label>
+      <input type="date" name="date_from" value="{{ filters.date_from }}"
+             class="rounded-lg border border-slate-300 px-3 py-1.5 text-sm">
+    </div>
+    <div>
+      <label class="block text-[11px] font-semibold uppercase tracking-wide text-slate-500 mb-1">To</label>
+      <input type="date" name="date_to" value="{{ filters.date_to }}"
+             class="rounded-lg border border-slate-300 px-3 py-1.5 text-sm">
+    </div>
+    <div>
+      <label class="block text-[11px] font-semibold uppercase tracking-wide text-slate-500 mb-1">Work Center</label>
+      <select name="wc" class="rounded-lg border border-slate-300 px-3 py-1.5 text-sm">
+        <option value="">All</option>
+        {% for wc in work_centers %}
+          <option value="{{ wc.id }}" {% if filters.wc == wc.id|stringformat:'s' %}selected{% endif %}>{{ wc.name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div>
+      <label class="block text-[11px] font-semibold uppercase tracking-wide text-slate-500 mb-1">Subprocess</label>
+      <select name="subprocess" class="rounded-lg border border-slate-300 px-3 py-1.5 text-sm">
+        <option value="">All</option>
+        {% for sp in subprocesses %}
+          <option value="{{ sp.id }}" data-wc="{{ sp.work_center_id }}" {% if filters.subprocess == sp.id|stringformat:'s' %}selected{% endif %}>{{ sp.work_center.name }} · {{ sp.name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div>
+      <label class="block text-[11px] font-semibold uppercase tracking-wide text-slate-500 mb-1">Shift</label>
+      <select name="shift" class="rounded-lg border border-slate-300 px-3 py-1.5 text-sm">
+        <option value="">All</option>
+        {% for s in shifts %}
+          <option value="{{ s.id }}" {% if filters.shift == s.id|stringformat:'s' %}selected{% endif %}>{{ s.name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div>
+      <label class="block text-[11px] font-semibold uppercase tracking-wide text-slate-500 mb-1">Category</label>
+      <select name="category" class="rounded-lg border border-slate-300 px-3 py-1.5 text-sm">
+        <option value="">All</option>
+        {% for c in categories %}
+          <option value="{{ c.id }}" {% if filters.category == c.id|stringformat:'s' %}selected{% endif %}>{{ c.name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <button type="submit" class="bg-slate-800 text-white rounded-lg px-4 py-1.5 text-sm font-semibold hover:bg-slate-700">
+      <i class="fas fa-filter mr-1"></i> Apply
+    </button>
+    <a href="{% url 'analytics:dashboard' %}" class="text-sm text-slate-500 hover:text-slate-700 px-2 py-1.5">Reset</a>
+  </form>
+
+  {# ── KPI cards ───────────────────────────────────────────────────────── #}
+  <div class="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-5 gap-4">
+    {% include "analytics/_kpi_card.html" with label="Availability" value=kpis.availability_pct suffix="%" icon="fa-gauge-high" tone="emerald" help="Share of scheduled time the line was actually able to run. Calculated as (scheduled time minus all downtime) divided by scheduled time." %}
+    {% include "analytics/_kpi_card.html" with label="Utilization" value=kpis.utilization_pct suffix="%" icon="fa-bolt" tone="blue" help="Share of scheduled time spent producing, excluding planned stops such as lunch and breaks. Higher means less idle time." %}
+    {% include "analytics/_kpi_card.html" with label="Plan Achievement" value=kpis.plan_achievement_pct suffix="%" icon="fa-bullseye" tone="violet" help="Percentage of the planned quantity that was actually produced across the filtered scope. Actual units divided by planned units." %}
+    {% include "analytics/_kpi_card.html" with label="Runtime" value=kpis.runtime_minutes suffix=" min" icon="fa-play" tone="teal" help="Total minutes the line spent producing, after subtracting every recorded operational event from the scheduled time." %}
+    {% include "analytics/_kpi_card.html" with label="Downtime" value=kpis.downtime_minutes suffix=" min" icon="fa-pause" tone="rose" help="Total minutes lost to all operational events combined, both planned (lunch, prep) and unplanned (breakdowns, material waiting)." %}
+    {% include "analytics/_kpi_card.html" with label="Planned Downtime" value=kpis.planned_downtime_minutes suffix=" min" icon="fa-calendar-check" tone="amber" help="Minutes lost to stops that were scheduled on purpose, such as lunch, operation preparation and work finalization." %}
+    {% include "analytics/_kpi_card.html" with label="Unplanned Downtime" value=kpis.unplanned_downtime_minutes suffix=" min" icon="fa-triangle-exclamation" tone="orange" help="Minutes lost to unexpected stops, such as machine breakdowns, material shortages or quality issues. This is the loss worth attacking first." %}
+    {% include "analytics/_kpi_card.html" with label="# Events" value=kpis.number_of_events suffix="" icon="fa-list-ol" tone="slate" help="Total count of operational events recorded in the filtered scope, regardless of their duration or category." %}
+    {% include "analytics/_kpi_card.html" with label="Avg Duration" value=kpis.average_duration_per_event suffix=" min" icon="fa-stopwatch" tone="cyan" help="Average length of a single operational event, in minutes. Total downtime divided by the number of events." %}
+    {% include "analytics/_kpi_card.html" with label="Plan Achieved Hrs" value=kpis.plan_achieved_hours suffix="" icon="fa-circle-check" tone="emerald" help="Number of production hours where the actual quantity met or exceeded the planned quantity." %}
+    {% include "analytics/_kpi_card.html" with label="Total Scrap" value=kpis.scrap_quantity suffix=" u" icon="fa-trash-can" tone="rose" help="Total scrap recorded across the filtered scope, in units. Scrap is captured per hour alongside the actual quantity and is NOT counted as good production." %}
+  </div>
+
+  {# ── Charts ──────────────────────────────────────────────────────────── #}
+  <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+    <div class="bg-white rounded-xl border border-slate-200 p-5">
+      <h3 class="text-sm font-semibold text-slate-700 mb-3">Downtime by Category{% include "analytics/_info.html" with text="Total downtime minutes grouped by event category, showing which type of stop costs the most time." %}</h3>
+      <canvas id="chartCategory" height="220"></canvas>
+    </div>
+    <div class="bg-white rounded-xl border border-slate-200 p-5">
+      <h3 class="text-sm font-semibold text-slate-700 mb-3">Pareto — Category Downtime{% include "analytics/_info.html" with text="Categories ranked by downtime with a cumulative percentage line. The few categories left of the 80% mark cause most of the loss." %}</h3>
+      <canvas id="chartPareto" height="220"></canvas>
+    </div>
+    <div class="bg-white rounded-xl border border-slate-200 p-5">
+      <h3 class="text-sm font-semibold text-slate-700 mb-3">Downtime by Shift{% include "analytics/_info.html" with text="Total downtime minutes per shift, revealing whether losses concentrate in a particular shift." %}</h3>
+      <canvas id="chartShift" height="220"></canvas>
+    </div>
+    <div class="bg-white rounded-xl border border-slate-200 p-5">
+      <h3 class="text-sm font-semibold text-slate-700 mb-3">Events Over Time{% include "analytics/_info.html" with text="Number of operational events recorded per day, showing whether stoppages are trending up or down." %}</h3>
+      <canvas id="chartTime" height="220"></canvas>
+    </div>
+  </div>
+
+  {# ══ PHASE 2 — Extended KPIs ══════════════════════════════════════════════ #}
+  <h2 class="text-base font-bold text-slate-700 mt-8 mb-1">Performance KPIs</h2>
+  <div class="grid grid-cols-2 md:grid-cols-5 gap-4">
+    {% include "analytics/_kpi_card.html" with label="Production Efficiency" value="—" suffix="%" icon="fa-gauge" tone="violet" help="Actual output versus planned output over the filtered scope, expressed as a percentage. Values above 100% mean the plan was exceeded." %}
+    {% include "analytics/_kpi_card.html" with label="Std Time" value="—" suffix=" min/pc" icon="fa-stopwatch" tone="blue" help="Average minutes required to produce one piece. Total working minutes divided by total pieces produced. Lower is faster." %}
+    {% include "analytics/_kpi_card.html" with label="Cycle Time" value="—" suffix=" min/pc" icon="fa-rotate" tone="cyan" help="Average minutes elapsed per piece produced. Useful for comparing models and work centers on equal footing." %}
+    {% include "analytics/_kpi_card.html" with label="Production Rate" value="—" suffix=" pc/hr" icon="fa-bolt" tone="emerald" help="Average pieces produced per hour of work. The inverse view of standard time; higher is better." %}
+    {% include "analytics/_kpi_card.html" with label="HC Utilization" value="—" suffix=" pc/head" icon="fa-users" tone="amber" help="Pieces produced per person per hour. Shows how much output each operator is contributing, so plans with different head counts stay comparable." %}
+  </div>
+
+  {# Trends #}
+  <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-2">
+    <div class="bg-white rounded-xl border border-slate-200 p-5">
+      <h3 class="text-sm font-semibold text-slate-700 mb-3">Planned vs Actual Trend{% include "analytics/_info.html" with text="Planned versus actual production in pieces over time, so gaps between plan and reality are visible at a glance." %} <span class="text-xs text-slate-400">(pieces)</span></h3>
+      <canvas id="chartPvaTrend" height="200"></canvas>
+    </div>
+    <div class="bg-white rounded-xl border border-slate-200 p-5">
+      <h3 class="text-sm font-semibold text-slate-700 mb-3">Productivity Trend{% include "analytics/_info.html" with text="Actual output as a percentage of plan over time. A downward slope means performance is degrading." %} <span class="text-xs text-slate-400">(%)</span></h3>
+      <canvas id="chartProdTrend" height="200"></canvas>
+    </div>
+    <div class="bg-white rounded-xl border border-slate-200 p-5">
+      <h3 class="text-sm font-semibold text-slate-700 mb-3">Overtime Trend{% include "analytics/_info.html" with text="Overtime hours recorded per period, useful for spotting a growing reliance on extra hours." %} <span class="text-xs text-slate-400">(hours)</span></h3>
+      <canvas id="chartOtTrend" height="200"></canvas>
+    </div>
+    <div class="bg-white rounded-xl border border-slate-200 p-5">
+      <h3 class="text-sm font-semibold text-slate-700 mb-3">Downtime by Category <span class="text-xs text-slate-400">(share)</span></h3>
+      <canvas id="chartDowntimeShare" height="200"></canvas>
+    </div>
+  </div>
+
+  {# Performers #}
+  <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-2">
+    {% include "analytics/_performer_table.html" with title="Top Work Centers" table_id="tblWcTop" %}
+    {% include "analytics/_performer_table.html" with title="Lowest Work Centers" table_id="tblWcBottom" %}
+    {% include "analytics/_performer_table.html" with title="Best Models" table_id="tblModelBest" %}
+    {% include "analytics/_performer_table.html" with title="Lowest Models" table_id="tblModelWorst" %}
+  </div>
+
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+// Carry the current filter query string through to every API call so the
+// charts always match the KPI cards above.
+const qs = window.location.search;
+const api = (path) => fetch(path + qs).then(r => r.json());
+
+function barChart(id, labels, data, label, color) {
+  new Chart(document.getElementById(id), {
+    type: "bar",
+    data: { labels, datasets: [{ label, data, backgroundColor: color }] },
+    options: { responsive: true, plugins: { legend: { display: false } },
+               scales: { y: { beginAtZero: true } } }
+  });
+}
+
+api("{% url 'analytics:api_by_dimension' 'category' %}").then(d => {
+  const rows = d.rows;
+  barChart("chartCategory",
+    rows.map(r => r["event_type__category__name"] || "—"),
+    rows.map(r => r.total_minutes),
+    "Minutes", "#6366f1");
+});
+
+api("{% url 'analytics:api_pareto' %}").then(d => {
+  const rows = d.rows;
+  new Chart(document.getElementById("chartPareto"), {
+    data: {
+      labels: rows.map(r => r["event_type__category__name"] || "—"),
+      datasets: [
+        { type: "bar",  label: "Minutes", data: rows.map(r => r.total_minutes),
+          backgroundColor: "#f59e0b", yAxisID: "y" },
+        { type: "line", label: "Cumulative %", data: rows.map(r => r.cumulative_pct),
+          borderColor: "#ef4444", yAxisID: "y1", tension: 0.3 }
+      ]
+    },
+    options: { responsive: true,
+      scales: { y: { beginAtZero: true, position: "left" },
+                y1: { beginAtZero: true, max: 100, position: "right",
+                      grid: { drawOnChartArea: false } } } }
+  });
+});
+
+api("{% url 'analytics:api_by_dimension' 'shift' %}").then(d => {
+  const rows = d.rows;
+  barChart("chartShift",
+    rows.map(r => r["execution__hourly_plan__daily_plan__shift__name"] || "—"),
+    rows.map(r => r.total_minutes),
+    "Minutes", "#14b8a6");
+});
+
+api("{% url 'analytics:api_over_time' %}").then(d => {
+  const rows = d.rows;
+  new Chart(document.getElementById("chartTime"), {
+    type: "line",
+    data: { labels: rows.map(r => r.bucket),
+            datasets: [{ label: "Minutes", data: rows.map(r => r.total_minutes),
+                         borderColor: "#3b82f6", backgroundColor: "#3b82f622",
+                         fill: true, tension: 0.3 }] },
+    options: { responsive: true, scales: { y: { beginAtZero: true } } }
+  });
+});
+
+// ══ PHASE 2 — Extended KPIs, trends, performers ═══════════════════════════════
+const period = new URLSearchParams(qs).get("period") || "day";
+
+// KPI cards: fill the "—" placeholders by matching the card label.
+function setKpiCard(label, value, suffix) {
+  document.querySelectorAll("span.text-\\[11px\\]").forEach(el => {
+    if (el.textContent.trim() === label) {
+      const val = el.closest("div")?.parentElement?.querySelector(".text-2xl");
+      if (val) val.textContent = (value === null || value === undefined) ? "—" : value + (suffix || "");
+    }
+  });
+}
+api("{% url 'analytics:api_extended_kpis' %}").then(k => {
+  setKpiCard("Production Efficiency", k.production_efficiency_pct, "%");
+  setKpiCard("Std Time",        k.standard_time_min_per_piece, " min/pc");
+  setKpiCard("Cycle Time",      k.cycle_time_min_per_piece, " min/pc");
+  setKpiCard("Production Rate", k.production_rate_pieces_per_hour, " pc/hr");
+  setKpiCard("HC Utilization",  k.headcount_utilization, " pc/head");
+});
+
+// Helper that merges the page filters (qs) with extra params cleanly.
+function apiWith(path, extra) {
+  const p = new URLSearchParams(qs);          // page filters
+  Object.entries(extra || {}).forEach(([k, v]) => p.set(k, v));
+  const query = p.toString();
+  return fetch(path + (query ? "?" + query : "")).then(r => r.json());
+}
+
+// Planned vs Actual trend (grouped bars).
+apiWith("{% url 'analytics:api_trend' 'planned-vs-actual' %}", { period }).then(d => {
+  const rows = d.rows;
+  new Chart(document.getElementById("chartPvaTrend"), {
+    type: "bar",
+    data: { labels: rows.map(r => r.bucket), datasets: [
+      { label: "Planned", data: rows.map(r => r.planned), backgroundColor: "rgba(59,130,246,0.35)" },
+      { label: "Actual",  data: rows.map(r => r.actual),  backgroundColor: "rgba(16,185,129,0.6)" },
+    ]},
+    options: { responsive: true, scales: { y: { beginAtZero: true } } }
+  });
+});
+
+// Productivity trend (line).
+apiWith("{% url 'analytics:api_trend' 'productivity' %}", { period }).then(d => {
+  const rows = d.rows;
+  new Chart(document.getElementById("chartProdTrend"), {
+    type: "line",
+    data: { labels: rows.map(r => r.bucket),
+            datasets: [{ label: "Productivity %", data: rows.map(r => r.productivity_pct),
+                         borderColor: "#8b5cf6", backgroundColor: "#8b5cf622", fill: true, tension: 0.3 }] },
+    options: { responsive: true, scales: { y: { beginAtZero: true } } }
+  });
+});
+
+// Overtime trend (bars).
+apiWith("{% url 'analytics:api_trend' 'overtime' %}", { period }).then(d => {
+  const rows = d.rows;
+  new Chart(document.getElementById("chartOtTrend"), {
+    type: "bar",
+    data: { labels: rows.map(r => r.bucket),
+            datasets: [{ label: "Overtime hrs", data: rows.map(r => r.overtime_hours),
+                         backgroundColor: "rgba(244,63,94,0.6)" }] },
+    options: { responsive: true, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true } } }
+  });
+});
+
+// Downtime share (doughnut) — reuses the by-category endpoint.
+api("{% url 'analytics:api_by_dimension' 'category' %}").then(d => {
+  const rows = d.rows;
+  new Chart(document.getElementById("chartDowntimeShare"), {
+    type: "doughnut",
+    data: { labels: rows.map(r => r["event_type__category__name"] || "—"),
+            datasets: [{ data: rows.map(r => r.total_minutes),
+              backgroundColor: ["#6366f1","#f59e0b","#10b981","#ef4444","#14b8a6","#8b5cf6","#94a3b8"] }] },
+    options: { responsive: true, plugins: { legend: { position: "right" } } }
+  });
+});
+
+// Performer tables.
+function fillPerformers(tableId, kind) {
+  api("{% url 'analytics:api_performers' 'PLACEHOLDER' %}".replace("PLACEHOLDER", kind)).then(d => {
+    const tb = document.getElementById(tableId);
+    if (!tb) return;
+    if (!d.rows.length) { tb.innerHTML = '<tr><td colspan="4" class="px-3 py-4 text-center text-slate-400">No data.</td></tr>'; return; }
+    tb.innerHTML = d.rows.map(r =>
+      `<tr>
+         <td class="px-3 py-2 font-medium">${r.name}</td>
+         <td class="px-3 py-2 text-right font-mono">${r.planned_pieces}</td>
+         <td class="px-3 py-2 text-right font-mono">${r.actual_pieces}</td>
+         <td class="px-3 py-2 text-right font-mono">${r.productivity_pct === null ? "—" : r.productivity_pct + "%"}</td>
+       </tr>`).join("");
+  });
+}
+fillPerformers("tblWcTop",     "wc-top");
+fillPerformers("tblWcBottom",  "wc-bottom");
+fillPerformers("tblModelBest", "model-best");
+fillPerformers("tblModelWorst","model-worst");
+</script>
+
+<script>
+// ── Dependent filter: Work Center → Subprocess ──────────────────────────────
+// The subprocess list is filtered client-side from data already in the DOM, so
+// changing Work Center costs no request and cannot produce an invalid pair.
+(function () {
+  const wcSel = document.querySelector('select[name="wc"], select[name="work_center"]');
+  const spSel = document.querySelector('select[name="subprocess"]');
+  if (!wcSel || !spSel) return;
+
+  // Remember every option once, with the work center it belongs to.
+  const all = Array.from(spSel.options).map(o => ({
+    value: o.value, text: o.textContent.trim(), wc: o.dataset.wc || "",
+  }));
+
+  function refresh(keepValue) {
+    const wc = wcSel.value;
+    const wanted = keepValue !== undefined ? keepValue : spSel.value;
+    spSel.innerHTML = "";
+    all.filter(o => !o.value || !wc || o.wc === wc).forEach(o => {
+      const opt = document.createElement("option");
+      opt.value = o.value;
+      opt.textContent = o.text;
+      if (o.wc) opt.dataset.wc = o.wc;
+      spSel.appendChild(opt);
+    });
+    // Keep the current subprocess only if it still belongs to the work center.
+    const stillValid = Array.from(spSel.options).some(o => o.value === wanted);
+    spSel.value = stillValid ? wanted : "";
+  }
+
+  wcSel.addEventListener("change", () => refresh(""));
+  refresh();   // apply on load so a bookmarked URL shows a coherent list
+})();
+</script>
+{% endblock %}

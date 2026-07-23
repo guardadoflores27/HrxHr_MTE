@@ -1,0 +1,372 @@
+{# templates/base.html #}
+{% load static %}
+<!DOCTYPE html>
+<html lang="en" class="h-full">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}MTE Hr×Hr{% endblock %}</title>
+
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: { mono: ['"JetBrains Mono"', 'monospace'] },
+          colors: {
+            slate: { 850: '#172032' },
+          }
+        }
+      }
+    }
+  </script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+
+  <style>
+    body { font-family: 'DM Sans', sans-serif; }
+    .mono { font-family: 'JetBrains Mono', monospace; }
+
+    /* Sidebar nav links */
+    .nav-item {
+      display: flex; align-items: center; gap: 10px;
+      padding: 8px 12px; border-radius: 6px;
+      font-size: 0.8125rem; font-weight: 500;
+      color: #94a3b8; text-decoration: none;
+      transition: background 0.15s, color 0.15s;
+    }
+    .nav-item:hover { background: rgba(255,255,255,0.06); color: #e2e8f0; }
+    .nav-item.active { background: #2563eb; color: #fff; }
+    .nav-item .icon { width: 16px; text-align: center; flex-shrink: 0; }
+
+    /* ── Collapsible sidebar ────────────────────────────────────────────── */
+    /* The layout is a flex row: #sidebar + a flex-1 content column, so simply
+       animating the sidebar width makes the content reclaim the space with no
+       extra JS. Width is the only animated property (cheap, GPU-friendly). */
+    #sidebar {
+      width: 14rem;                 /* matches the original w-56 */
+      transition: width 0.22s ease;
+    }
+    #sidebar.is-collapsed,
+    html.sidebar-collapsed #sidebar { width: 4.25rem; }
+
+    /* Hide every text label; keep icons. Labels fade out before the width
+       finishes so text never wraps awkwardly mid-animation. */
+    #sidebar.is-collapsed .sidebar-label,
+    #sidebar.is-collapsed .nav-section-label,
+    #sidebar.is-collapsed .nav-sub-item,
+    html.sidebar-collapsed .sidebar-label,
+    html.sidebar-collapsed .nav-section-label,
+    html.sidebar-collapsed .nav-sub-item {
+      display: none;
+    }
+
+    /* Center the icons and tighten padding in the collapsed rail. */
+    #sidebar.is-collapsed .nav-item,
+    html.sidebar-collapsed .nav-item {
+      justify-content: center;
+      padding-left: 8px; padding-right: 8px; gap: 0;
+    }
+    #sidebar.is-collapsed .sidebar-head,
+    html.sidebar-collapsed .sidebar-head {
+      padding-left: 0.75rem; padding-right: 0.75rem;
+      justify-content: center; gap: 0;
+    }
+    #sidebar.is-collapsed .sidebar-foot,
+    html.sidebar-collapsed .sidebar-foot {
+      justify-content: center;
+      padding-left: 0.5rem; padding-right: 0.5rem;
+    }
+    /* Toggle sits under the logo when collapsed instead of pushing it out. */
+    #sidebar.is-collapsed .sidebar-head,
+    html.sidebar-collapsed .sidebar-head { flex-wrap: wrap; row-gap: 8px; }
+    #sidebar.is-collapsed .sidebar-toggle,
+    html.sidebar-collapsed .sidebar-toggle { margin-left: 0; }
+
+    /* Keep the focus ring reachable for keyboard users. */
+    .nav-item:focus-visible,
+    .sidebar-toggle:focus-visible { outline: 2px solid #3b82f6; outline-offset: 2px; }
+
+    /* Native title="" gives us accessible tooltips in the collapsed rail with
+       zero JS; this just makes them feel intentional. */
+    #sidebar.is-collapsed .nav-item { position: relative; }
+
+    /* Sub nav items (indented) */
+    .nav-sub-item {
+      display: flex; align-items: center; gap: 9px;
+      padding: 6px 12px 6px 30px; border-radius: 6px;
+      font-size: 0.78rem; font-weight: 500;
+      color: #64748b; text-decoration: none;
+      transition: background 0.15s, color 0.15s;
+      position: relative;
+    }
+    .nav-sub-item::before {
+      content: '';
+      position: absolute;
+      left: 18px;
+      top: 50%;
+      transform: translateY(-50%);
+      width: 4px; height: 4px;
+      border-radius: 50%;
+      background: currentColor;
+      opacity: 0.5;
+    }
+    .nav-sub-item:hover { background: rgba(255,255,255,0.04); color: #94a3b8; }
+    .nav-sub-item.active { color: #60a5fa; background: rgba(37,99,235,0.12); }
+    .nav-sub-item.active::before { opacity: 1; }
+
+    /* Table hover */
+    tbody tr:hover td { background: #f8fafc; }
+
+    /* Thin scrollbar */
+    ::-webkit-scrollbar { width: 5px; height: 5px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 99px; }
+  </style>
+  {% block extra_head %}{% endblock %}
+</head>
+
+<body class="h-full bg-gray-50 text-gray-900">
+
+<script>
+  (function () {
+    try {
+      if (localStorage.getItem('mte.sidebar.collapsed') === '1') {
+        document.documentElement.classList.add('sidebar-collapsed');
+      }
+    } catch (e) { /* localStorage unavailable — fall back to expanded */ }
+  })();
+</script>
+<div class="flex h-full overflow-hidden">
+
+  {# ── SIDEBAR ──────────────────────────────────────────────────────── #}
+  <aside id="sidebar"
+         class="w-56 flex-shrink-0 flex flex-col bg-slate-900 overflow-y-auto overflow-x-hidden">
+
+    {# Logo + collapse toggle #}
+    <div class="flex items-center gap-2.5 px-5 py-5 border-b border-slate-700/60 sidebar-head">
+      <div class="w-7 h-7 rounded bg-blue-600 flex items-center justify-center flex-shrink-0">
+        <i class="fas fa-industry text-white text-xs"></i>
+      </div>
+      <div class="sidebar-label min-w-0">
+        <p class="text-white font-bold text-sm leading-none whitespace-nowrap">MTE Hr×Hr</p>
+        <p class="text-slate-500 text-xs mt-0.5 whitespace-nowrap">Production Control</p>
+      </div>
+      <button type="button" id="sidebar-toggle"
+              class="sidebar-toggle ml-auto flex-shrink-0 w-7 h-7 rounded-md text-slate-400
+                     hover:text-white hover:bg-slate-700/60 flex items-center justify-center
+                     transition focus:outline-none focus:ring-2 focus:ring-blue-500"
+              aria-label="Collapse sidebar" aria-expanded="true" aria-controls="sidebar"
+              title="Collapse sidebar">
+        <i class="fas fa-bars text-xs" aria-hidden="true"></i>
+      </button>
+    </div>
+
+    {# Nav #}
+    <nav class="flex-1 px-3 py-4 space-y-0.5">
+
+      <p class="nav-section-label px-3 pt-1 pb-2 text-xs font-semibold uppercase tracking-widest text-slate-500">Planning</p>
+
+      <a title="Dashboard" href="{% url 'planning:dashboard' %}"
+         class="nav-item {% if request.resolver_match.url_name == 'dashboard' %}active{% endif %}">
+        <i class="fas fa-chart-line icon"></i><span class="sidebar-label">Dashboard</span>
+      </a>
+      <a title="Daily Plans" href="{% url 'planning:daily_plan_list' %}"
+         class="nav-item {% if 'daily_plan_list' in request.resolver_match.url_name or 'plan_create' in request.resolver_match.url_name or 'daily_plan_update' in request.resolver_match.url_name %}active{% endif %}">
+        <i class="fas fa-calendar-days icon"></i><span class="sidebar-label">Daily Plans</span>
+      </a>
+      <a title="Hourly Plans" href="{% url 'planning:hourly_plan_board' %}"
+         class="nav-item {% if request.resolver_match.url_name == 'hourly_plan_board' %}active{% endif %}">
+        <i class="fas fa-clock icon"></i><span class="sidebar-label">Hourly Plans</span>
+      </a>
+
+      <p class="nav-section-label px-3 pt-4 pb-2 text-xs font-semibold uppercase tracking-widest text-slate-500">Production</p>
+
+      <a title="Execution" href="{% url 'production:execution_list' %}"
+         class="nav-item {% if request.resolver_match.url_name == 'execution_list' %}active{% endif %}">
+        <i class="fas fa-play-circle icon"></i><span class="sidebar-label">Execution</span>
+      </a>
+      <a title="Analytics" href="{% url 'analytics:dashboard' %}"
+         class="nav-item {% if request.resolver_match.namespace == 'analytics' and request.resolver_match.url_name == 'dashboard' %}active{% endif %}">
+        <i class="fas fa-chart-pie icon"></i><span class="sidebar-label">Analytics</span>
+      </a>
+      <a title="Day Dashboard" href="{% url 'analytics:day_dashboard' %}"
+         class="nav-item {% if request.resolver_match.url_name == 'day_dashboard' %}active{% endif %}">
+        <i class="fas fa-calendar-day icon"></i><span class="sidebar-label">Day Dashboard</span>
+      </a>
+      <a title="Period Dashboard" href="{% url 'analytics:period_dashboard' %}"
+         class="nav-item {% if request.resolver_match.url_name == 'period_dashboard' %}active{% endif %}">
+        <i class="fas fa-calendar-week icon"></i><span class="sidebar-label">Period Dashboard</span>
+      </a>
+
+      <p class="nav-section-label px-3 pt-4 pb-2 text-xs font-semibold uppercase tracking-widest text-slate-500">Catalogs</p>
+
+      <a title="Work Centers" href="{% url 'core:wc_list' %}"
+         class="nav-item {% if 'wc_' in request.resolver_match.url_name %}active{% endif %}">
+        <i class="fas fa-sitemap icon"></i><span class="sidebar-label">Work Centers</span>
+      </a>
+      <a title="Subprocesses" href="{% url 'core:sp_list' %}"
+         class="nav-item {% if 'sp_' in request.resolver_match.url_name %}active{% endif %}">
+        <i class="fas fa-code-branch icon"></i><span class="sidebar-label">Subprocesses</span>
+      </a>
+
+      {# ── Subprocess Types: admin only ──────────────────────────────────── #}
+      {% if user.is_authenticated and user.profile.role == 'admin' %}
+      <a href="{% url 'core:spt_list' %}"
+         class="nav-sub-item {% if 'spt_' in request.resolver_match.url_name %}active{% endif %}">
+        <i class="fas fa-layer-group icon"></i><span class="sidebar-label">Subprocess Types</span>
+      </a>
+      {% endif %}
+      <a title="Models" href="{% url 'planning:model_list' %}"
+         class="nav-item {% if 'model_' in request.resolver_match.url_name %}active{% endif %}">
+        <i class="fas fa-cubes icon"></i><span class="sidebar-label">Models</span>
+      </a>
+
+      {# ── Shists: only admin and engineer ─────────────────────────────── #}
+      {% if user.is_authenticated and user.profile.role in 'admin,engineer' %}
+      <a title="Shifts" href="{% url 'core:shift_list' %}"
+         class="nav-item {% if 'shift_' in request.resolver_match.url_name %}active{% endif %}">
+        <i class="fas fa-business-time icon"></i><span class="sidebar-label">Shifts</span>
+      </a>
+      {% endif %}
+
+      {# ── USERS ADMINISTRATION ──────────────────────────────────────── #}
+      {% if user.is_authenticated %}
+      <p class="nav-section-label px-3 pt-4 pb-2 text-xs font-semibold uppercase tracking-widest text-slate-500">Administration</p>
+
+      {# Parent link — always visible, goes to user list #}
+      <a title="User Admin" href="{% url 'users:user_list' %}"
+         class="nav-item {% if request.resolver_match.namespace == 'users' and request.resolver_match.url_name not in 'login,logout,profile' %}active{% endif %}">
+        <i class="fas fa-users-gear icon"></i><span class="sidebar-label">User Admin</span>
+      </a>
+
+      {# Sub-items — always visible for all authenticated roles #}
+      <a href="{% url 'users:user_list' %}"
+         class="nav-sub-item {% if request.resolver_match.url_name == 'user_list' %}active{% endif %}">
+        <i class="fas fa-magnifying-glass" style="font-size:0.6rem;opacity:0.6;margin-right:2px"></i> Users
+      </a>
+
+      {# Create & Edit sub-items only for Admin #}
+      {% if user.profile.is_admin %}
+        <a href="{% url 'users:user_create' %}"
+           class="nav-sub-item {% if request.resolver_match.url_name == 'user_create' %}active{% endif %}">
+          <i class="fas fa-user-plus" style="font-size:0.6rem;opacity:0.6;margin-right:2px"></i> Create User
+        </a>
+        <a href="{% url 'users:user_edit_list' %}"
+           class="nav-sub-item {% if request.resolver_match.url_name in 'user_edit_list,user_edit,user_delete,user_delete_confirm' %}active{% endif %}">
+          <i class="fas fa-user-pen" style="font-size:0.6rem;opacity:0.6;margin-right:2px"></i> Edit Users
+        </a>
+      {% endif %}
+      {% endif %}
+
+    </nav>
+
+    {# User footer — shows username + role badge + sign out #}
+    {% if user.is_authenticated %}
+    <div class="border-t border-slate-700/60 px-4 py-3">
+      <div class="flex items-center gap-2.5 sidebar-foot">
+        {# Avatar with role color #}
+        <div class="w-7 h-7 rounded-full flex items-center justify-center text-white text-xs font-bold flex-shrink-0
+          {% if user.profile.role == 'admin' %}bg-rose-500
+          {% elif user.profile.role == 'leader' %}bg-emerald-500
+          {% elif user.profile.role == 'engineer' %}bg-violet-500
+          {% else %}bg-blue-500{% endif %}"
+          title="{{ user.username }} ({{ user.profile.get_role_display }})">
+          {{ user.username|first|upper }}
+        </div>
+        <div class="min-w-0 flex-1 sidebar-label">
+          <p class="text-slate-200 text-xs font-medium truncate leading-tight">{{ user.username }}</p>
+          {# Role badge #}
+          <span class="inline-flex items-center rounded px-1.5 py-0.5 mt-0.5 text-[10px] font-semibold leading-none
+            {% if user.profile.role == 'admin' %}bg-rose-500/20 text-rose-400
+            {% elif user.profile.role == 'leader' %}bg-emerald-500/20 text-emerald-400
+            {% elif user.profile.role == 'engineer' %}bg-violet-500/20 text-violet-400
+            {% else %}bg-blue-500/20 text-blue-400{% endif %}">
+            {{ user.profile.get_role_display }}
+          </span>
+        </div>
+        {# Sign-out icon button #}
+        <form method="post" action="{% url 'users:logout' %}">
+          {% csrf_token %}
+          <button type="submit" title="Sign out"
+                  class="text-slate-500 hover:text-slate-300 transition bg-transparent border-0 p-0 cursor-pointer ml-1">
+            <i class="fas fa-arrow-right-from-bracket text-xs"></i>
+          </button>
+        </form>
+      </div>
+    </div>
+    {% endif %}
+  </aside>
+
+  {# ── MAIN ──────────────────────────────────────────────────────────── #}
+  <div class="flex-1 flex flex-col min-w-0 overflow-hidden">
+
+    {# Top bar #}
+    <header class="flex-shrink-0 h-14 bg-white border-b border-gray-200 flex items-center px-6 gap-4">
+      <h1 class="text-base font-semibold text-gray-800 flex-1">
+        {% block page_title %}{% endblock %}
+      </h1>
+      <div class="flex items-center gap-3">
+        {% block header_actions %}{% endblock %}
+      </div>
+    </header>
+
+    {# Flash messages #}
+    {% if messages %}
+    <div class="px-6 pt-4 space-y-2 flex-shrink-0">
+      {% for m in messages %}
+      <div class="flex items-center gap-3 rounded-lg border px-4 py-2.5 text-sm
+        {% if 'success' in m.tags %}bg-emerald-50 border-emerald-200 text-emerald-800
+        {% elif 'error' in m.tags %}bg-red-50 border-red-200 text-red-800
+        {% elif 'warning' in m.tags %}bg-amber-50 border-amber-200 text-amber-800
+        {% else %}bg-blue-50 border-blue-200 text-blue-800{% endif %}">
+        <i class="fas {% if 'success' in m.tags %}fa-circle-check{% elif 'error' in m.tags %}fa-circle-xmark{% else %}fa-circle-info{% endif %} flex-shrink-0"></i>
+        {{ m }}
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+
+    {# Page content #}
+    <main class="flex-1 overflow-y-auto px-6 py-6">
+      {% block content %}{% endblock %}
+    </main>
+  </div>
+
+</div>
+{% block extra_js %}{% endblock %}
+
+
+<script>
+  (function () {
+    var KEY = 'mte.sidebar.collapsed';
+    var sidebar = document.getElementById('sidebar');
+    var toggle  = document.getElementById('sidebar-toggle');
+    if (!sidebar || !toggle) return;
+
+    function apply(collapsed) {
+      sidebar.classList.toggle('is-collapsed', collapsed);
+      toggle.setAttribute('aria-expanded', String(!collapsed));
+      var label = collapsed ? 'Expand sidebar' : 'Collapse sidebar';
+      toggle.setAttribute('aria-label', label);
+      toggle.setAttribute('title', label);
+      // Let charts/tables re-measure now that the content area changed width.
+      window.dispatchEvent(new Event('resize'));
+    }
+
+    // Adopt whatever the pre-paint <html> class set, then clear it so the
+    // toggle has a single source of truth.
+    var pre = document.documentElement.classList.contains('sidebar-collapsed');
+    document.documentElement.classList.remove('sidebar-collapsed');
+    apply(pre || sidebar.classList.contains('is-collapsed'));
+
+    toggle.addEventListener('click', function () {
+      var collapsed = !sidebar.classList.contains('is-collapsed');
+      apply(collapsed);
+      try { localStorage.setItem(KEY, collapsed ? '1' : '0'); } catch (e) {}
+    });
+  })();
+</script>
+</body>
+</html>

@@ -1,0 +1,132 @@
+{# templates/core/spt_list.html #}
+{# ─────────────────────────────────────────────────────────────────────────── #}
+{# hrxhr_project/templates/core/spt_list.html       #}
+{# ─────────────────────────────────────────────────────────────────────────── #}
+{% extends "base.html" %}
+
+{% block title %}Subprocess Types — MTE Hr×Hr{% endblock %}
+{% block page_title %}Subprocess Types{% endblock %}
+
+{% block header_actions %}
+{% if is_admin %}
+<a href="{% url 'core:spt_create' %}"
+   class="inline-flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white
+          text-sm font-semibold px-4 py-2 rounded-lg transition shadow-sm">
+  <i class="fas fa-plus"></i> New Type
+</a>
+{% endif %}
+{% endblock %}
+
+{% block content %}
+
+{# Admin-only notice #}
+{% if not is_admin %}
+<div class="mb-5 rounded-xl border border-amber-100 bg-amber-50 px-5 py-3 flex items-center gap-3">
+  <i class="fas fa-lock text-amber-400 flex-shrink-0"></i>
+  <p class="text-sm text-amber-700">
+    Only <strong>Admins</strong> can create, edit, or delete subprocess types.
+    You are viewing in read-only mode.
+  </p>
+</div>
+{% endif %}
+
+{# Info banner #}
+<div class="mb-5 rounded-xl border border-blue-100 bg-blue-50 px-5 py-4 flex items-start gap-3">
+  <i class="fas fa-circle-info text-blue-400 mt-0.5 flex-shrink-0"></i>
+  <div class="text-sm text-blue-700">
+    <span class="font-semibold">Subprocess Types</span> define the production category,
+    the line they apply to, and how many <strong>units form one piece</strong>.
+    They are used when creating Subprocesses and drive the conversion calculation
+    in the Hourly Plan.
+  </div>
+</div>
+
+{# Type cards grid #}
+{% if spts %}
+<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+
+  {% for spt in spts %}
+  <div class="bg-white rounded-xl border {% if spt.is_active %}border-gray-200{% else %}border-gray-100 opacity-60{% endif %}
+              shadow-sm p-5 flex flex-col gap-3">
+
+    {# Header #}
+    <div class="flex items-start justify-between gap-2">
+      <div>
+        <p class="text-sm font-bold text-gray-800">{{ spt.name }}</p>
+        <span class="inline-flex items-center gap-1 mt-1 text-[11px] font-semibold px-2 py-0.5 rounded-full
+                     {% if spt.applies_to == 'reactores' %}
+                       bg-blue-50 text-blue-700 border border-blue-100
+                     {% else %}
+                       bg-violet-50 text-violet-700 border border-violet-100
+                     {% endif %}">
+          <i class="fas fa-industry text-[9px]"></i>
+          {{ spt.get_applies_to_display }}
+        </span>
+      </div>
+      <span class="inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-full flex-shrink-0
+                   {% if spt.is_active %}bg-emerald-100 text-emerald-700{% else %}bg-gray-100 text-gray-400{% endif %}">
+        <span class="w-1.5 h-1.5 rounded-full {% if spt.is_active %}bg-emerald-500{% else %}bg-gray-300{% endif %}"></span>
+        {% if spt.is_active %}Active{% else %}Inactive{% endif %}
+      </span>
+    </div>
+
+    {# Unit counter #}
+    <div class="flex items-center gap-3 bg-gray-50 rounded-lg px-3 py-2.5">
+      <i class="fas fa-cubes text-gray-400 text-sm"></i>
+      <div>
+        <p class="text-[10px] text-gray-400 uppercase tracking-wide font-semibold">Units per Piece</p>
+        <p class="text-sm font-bold mono text-gray-800">
+          {{ spt.units_per_piece }}
+          <span class="text-xs font-normal text-gray-400 ml-1">
+            {% if spt.units_per_piece == 1 %}unit = 1 piece{% else %}units = 1 piece{% endif %}
+          </span>
+        </p>
+      </div>
+    </div>
+
+    {# Linked subprocesses count #}
+    {% with count=spt.subprocesses.count %}
+    <p class="text-[11px] text-gray-400">
+      <i class="fas fa-cogs mr-1"></i>
+      {{ count }} subprocess{{ count|pluralize }} linked
+    </p>
+    {% endwith %}
+
+    {# Actions — admin only #}
+    {% if is_admin %}
+    <div class="flex items-center gap-2 pt-1 border-t border-gray-50">
+      <a href="{% url 'core:spt_update' spt.pk %}"
+         class="flex-1 text-center text-xs font-semibold text-blue-600 hover:text-blue-800
+                bg-blue-50 hover:bg-blue-100 rounded-lg py-2 transition">
+        <i class="fas fa-pen-to-square mr-1"></i> Edit
+      </a>
+      <a href="{% url 'core:spt_delete' spt.pk %}"
+         class="flex-1 text-center text-xs font-semibold text-red-500 hover:text-red-700
+                bg-red-50 hover:bg-red-100 rounded-lg py-2 transition">
+        <i class="fas fa-trash mr-1"></i> Delete
+      </a>
+    </div>
+    {% endif %}
+
+  </div>
+  {% endfor %}
+
+</div>
+
+{% else %}
+<div class="flex flex-col items-center py-24 text-center">
+  <div class="w-16 h-16 rounded-full bg-gray-100 flex items-center justify-center mb-4">
+    <i class="fas fa-layer-group text-gray-300 text-2xl"></i>
+  </div>
+  <p class="text-sm font-semibold text-gray-400 mb-1">No subprocess types yet</p>
+  {% if is_admin %}
+  <a href="{% url 'core:spt_create' %}"
+     class="mt-4 inline-flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white
+            text-sm font-semibold px-5 py-2.5 rounded-lg transition">
+    <i class="fas fa-plus"></i> Create first type
+  </a>
+  {% endif %}
+</div>
+{% endif %}
+
+{% endblock %}

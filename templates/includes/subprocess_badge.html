@@ -1,0 +1,22 @@
+<!-- includes/subprocess_badge.html — requiere variable `sp` con .name y .process_type -->
+<span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold border
+  {% if sp.process_type == 'normal' %}
+    bg-blue-50 text-blue-700 border-blue-200
+  {% elif sp.process_type == 'winding' %}
+    bg-violet-50 text-violet-700 border-violet-200
+  {% elif sp.process_type == 'braze' %}
+    bg-amber-50 text-amber-700 border-amber-200
+  {% elif sp.process_type == 'wind_braze' %}
+    bg-teal-50 text-teal-700 border-teal-200
+  {% else %}
+    bg-gray-100 text-gray-600 border-gray-200
+  {% endif %}">
+  <span class="w-1.5 h-1.5 rounded-full
+    {% if sp.process_type == 'normal' %}bg-blue-400
+    {% elif sp.process_type == 'winding' %}bg-violet-400
+    {% elif sp.process_type == 'braze' %}bg-amber-400
+    {% elif sp.process_type == 'wind_braze' %}bg-teal-400
+    {% else %}bg-gray-400{% endif %}">
+  </span>
+  {{ sp.name }}
+</span>

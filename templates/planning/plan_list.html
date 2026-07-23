@@ -1,0 +1,285 @@
+{# templates/planning/plan_list.html #}
+{% extends "base.html" %}
+
+{% block title %}Daily Plans — MTE Hr×Hr{% endblock %}
+{% block page_title %}Daily Plans{% endblock %}
+
+{% block header_actions %}
+{% if can_write %}
+<a href="{% url 'planning:daily_plan_create' %}"
+   class="inline-flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold px-3.5 py-2 rounded-lg transition">
+  <i class="fas fa-plus text-xs"></i> New Plan
+</a>
+{% else %}
+<span class="group relative inline-flex items-center gap-1.5 bg-gray-200 text-gray-400 text-xs font-semibold px-3.5 py-2 rounded-lg cursor-not-allowed select-none"
+      title="Only Leaders and Admins can create plans. Your role is {{ user.profile.role_label }}.">
+  <i class="fas fa-plus text-xs"></i> New Plan
+  <span class="pointer-events-none absolute right-0 top-full mt-2 z-30 w-60 opacity-0 group-hover:opacity-100 transition-opacity duration-150">
+    <span class="block rounded-lg bg-slate-800 text-white text-[11px] font-normal leading-snug px-3 py-2 shadow-xl">Only Leaders and Admins can create plans. Your role is {{ user.profile.role_label }}.</span>
+  </span>
+</span>
+{% endif %}
+{% endblock %}
+
+{% block content %}
+
+{# ── Panel de filtros ── #}
+<form method="get" id="filter-form"
+      class="bg-white rounded-xl border border-gray-200 shadow-sm px-5 py-4 mb-4">
+  <div class="flex flex-wrap items-end gap-3">
+
+    {# Fecha desde #}
+    <div class="flex flex-col gap-1 min-w-36">
+      <label class="text-xs font-semibold text-gray-500 uppercase tracking-wide">
+        <i class="fas fa-calendar mr-1 text-gray-400"></i>From
+      </label>
+      <input type="date" name="date_from" value="{{ filter.date_from }}"
+             class="rounded-lg border border-gray-300 px-3 py-1.5 text-sm shadow-sm
+                    focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none">
+    </div>
+
+    {# Fecha hasta #}
+    <div class="flex flex-col gap-1 min-w-36">
+      <label class="text-xs font-semibold text-gray-500 uppercase tracking-wide">
+        <i class="fas fa-calendar mr-1 text-gray-400"></i>To
+      </label>
+      <input type="date" name="date_to" value="{{ filter.date_to }}"
+             class="rounded-lg border border-gray-300 px-3 py-1.5 text-sm shadow-sm
+                    focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none">
+    </div>
+
+    {# Work Center #}
+    <div class="flex flex-col gap-1 min-w-44">
+      <label class="text-xs font-semibold text-gray-500 uppercase tracking-wide">
+        <i class="fas fa-industry mr-1 text-gray-400"></i>Work Center
+      </label>
+      <select name="work_center"
+              class="rounded-lg border border-gray-300 px-3 py-1.5 text-sm shadow-sm
+                     focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none bg-white">
+        <option value="">— All —</option>
+        {% for wc in work_centers %}
+        <option value="{{ wc.id }}" {% if filter.work_center == wc.id|stringformat:"s" %}selected{% endif %}>
+          {{ wc.name }}
+        </option>
+        {% endfor %}
+      </select>
+    </div>
+
+    {# Subprocess #}
+    <div class="flex flex-col gap-1 min-w-48">
+      <label class="text-xs font-semibold text-gray-500 uppercase tracking-wide">
+        <i class="fas fa-diagram-project mr-1 text-gray-400"></i>Subprocess
+      </label>
+      <select name="subprocess"
+              class="rounded-lg border border-gray-300 px-3 py-1.5 text-sm shadow-sm
+                     focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none bg-white">
+        <option value="">— All —</option>
+        {% for sp in subprocesses %}
+        <option value="{{ sp.id }}" data-wc="{{ sp.work_center_id }}" {% if filter.subprocess == sp.id|stringformat:"s" %}selected{% endif %}>
+          {{ sp.work_center.name }} · {{ sp.name }}
+        </option>
+        {% endfor %}
+      </select>
+    </div>
+
+
+    {# Shift #}
+    <div class="flex flex-col gap-1 min-w-40">
+      <label class="text-xs font-semibold text-gray-500 uppercase tracking-wide">
+        <i class="fas fa-clock mr-1 text-gray-400"></i>Shift
+      </label>
+      <select name="shift"
+              class="rounded-lg border border-gray-300 px-3 py-1.5 text-sm shadow-sm
+                     focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none bg-white">
+        <option value="">— All —</option>
+        {% for sh in shifts %}
+        <option value="{{ sh.id }}" {% if filter.shift == sh.id|stringformat:"s" %}selected{% endif %}>
+          {{ sh.name }}
+        </option>
+        {% endfor %}
+      </select>
+    </div>
+
+    {# Botones #}
+    <div class="flex gap-2 pb-0.5">
+      <button type="submit"
+              class="inline-flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white
+                     text-xs font-semibold px-4 py-2 rounded-lg transition">
+        <i class="fas fa-magnifying-glass text-xs"></i> Filter
+      </button>
+      {% if filter.date_from or filter.date_to or filter.work_center %}
+      <a href="{% url 'planning:daily_plan_list' %}"
+         class="inline-flex items-center gap-1.5 text-xs font-semibold text-gray-500
+                hover:text-gray-800 border border-gray-200 hover:border-gray-300
+                px-4 py-2 rounded-lg transition">
+        <i class="fas fa-xmark text-xs"></i> Clear
+      </a>
+      {% endif %}
+    </div>
+
+  </div>
+
+  {# Chips de filtros activos #}
+  {% if filter.date_from or filter.date_to or filter.work_center %}
+  <div class="flex flex-wrap gap-2 mt-3 pt-3 border-t border-gray-100">
+    <span class="text-xs text-gray-400">Active filters:</span>
+    {% if filter.date_from %}
+    <span class="inline-flex items-center gap-1 bg-blue-50 text-blue-700 border border-blue-200
+                 text-xs font-medium px-2 py-0.5 rounded-full">
+      <i class="fas fa-calendar-day text-[10px]"></i> From {{ filter.date_from }}
+    </span>
+    {% endif %}
+    {% if filter.date_to %}
+    <span class="inline-flex items-center gap-1 bg-blue-50 text-blue-700 border border-blue-200
+                 text-xs font-medium px-2 py-0.5 rounded-full">
+      <i class="fas fa-calendar-day text-[10px]"></i> To {{ filter.date_to }}
+    </span>
+    {% endif %}
+    {% if filter.work_center %}
+    <span class="inline-flex items-center gap-1 bg-indigo-50 text-indigo-700 border border-indigo-200
+                 text-xs font-medium px-2 py-0.5 rounded-full">
+      <i class="fas fa-industry text-[10px]"></i>
+      {% for wc in work_centers %}{% if wc.id|stringformat:"s" == filter.work_center %}{{ wc.name }}{% endif %}{% endfor %}
+    </span>
+    {% endif %}
+  </div>
+  {% endif %}
+</form>
+
+{# ── Tabla de planes ── #}
+<div class="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+  <div class="px-5 py-3 border-b border-gray-100 flex items-center justify-between">
+    <p class="text-sm font-semibold text-gray-700">
+      {% if filter.date_from or filter.date_to or filter.work_center %}
+        Filtered results
+      {% else %}
+        All Daily Plans
+      {% endif %}
+    </p>
+    <p class="text-xs text-gray-400 mono">{{ plans|length }} plan{{ plans|length|pluralize:"s" }}</p>
+  </div>
+
+  {% if plans %}
+  <div class="overflow-x-auto">
+    <table class="min-w-full text-sm">
+      <thead>
+        <tr class="bg-gray-50 border-b border-gray-100">
+          <th class="px-4 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Date</th>
+          <th class="px-4 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Work Center</th>
+          <th class="px-4 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Subprocess</th>
+          <th class="px-4 py-2.5 text-center text-xs font-semibold text-gray-500 uppercase tracking-wide">HC</th>
+          <th class="px-4 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Shift</th>
+          <th class="px-4 py-2.5 text-right text-xs font-semibold text-gray-500 uppercase tracking-wide">Actions</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-gray-50">
+        {% for plan in plans %}
+        <tr class="transition-colors hover:bg-gray-50/60">
+          <td class="px-4 py-2.5 font-semibold text-gray-900 mono text-xs">{{ plan.date }}</td>
+          <td class="px-4 py-2.5 text-gray-700">{{ plan.work_center.name }}</td>
+          <td class="px-4 py-2.5">
+            {% with sp=plan.subprocess %}
+            {% include "includes/subprocess_badge.html" %}
+            {% endwith %}
+          </td>
+          <td class="px-4 py-2.5 text-center font-medium text-gray-700 mono text-xs">{{ plan.headcount }}</td>
+          <td class="px-4 py-2.5 mono text-xs text-gray-500">
+            {{ plan.shift.start_time|time:"g:i A" }} – {{ plan.shift.end_time|time:"g:i A" }}
+          </td>
+          <td class="px-4 py-2.5 text-right">
+            <div class="inline-flex items-center gap-3">
+              <a href="{% url 'planning:hourly_plan' plan.id %}"
+                 class="text-xs font-semibold text-blue-600 hover:text-blue-800 transition"
+                 title="Enter hourly targets">
+                <i class="fas fa-clock"></i> Hours
+              </a>
+              {% if can_write %}
+<a href="{% url 'planning:daily_plan_update' plan.id %}"
+                 class="text-xs text-gray-400 hover:text-gray-700 transition" title="Edit">
+                <i class="fas fa-pen"></i>
+              </a>
+{% else %}
+<span class="text-xs text-gray-200 cursor-not-allowed" title="Only Leaders and Admins can edit plans. Your role is {{ user.profile.role_label }}."><i class="fas fa-pen"></i></span>
+{% endif %}
+              {% if can_delete_plan %}
+<a href="{% url 'planning:daily_plan_delete' plan.id %}"
+                 class="text-xs text-red-400 hover:text-red-600 transition" title="Delete">
+                <i class="fas fa-trash"></i>
+              </a>
+{% else %}
+<span class="text-xs text-gray-200 cursor-not-allowed" title="Only Leaders and Admins can delete plans. Your role is {{ user.profile.role_label }}."><i class="fas fa-trash"></i></span>
+{% endif %}
+            </div>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  {% else %}
+  <div class="flex flex-col items-center py-16 text-center">
+    <div class="w-12 h-12 rounded-full bg-gray-100 flex items-center justify-center mb-3">
+      {% if filter.date_from or filter.date_to or filter.work_center %}
+        <i class="fas fa-filter text-gray-300 text-xl"></i>
+      {% else %}
+        <i class="fas fa-calendar-xmark text-gray-300 text-xl"></i>
+      {% endif %}
+    </div>
+    {% if filter.date_from or filter.date_to or filter.work_center %}
+      <p class="text-sm text-gray-400">No results for the applied filters.</p>
+      <a href="{% url 'planning:daily_plan_list' %}"
+         class="mt-3 text-sm text-blue-600 hover:underline font-medium">
+        View all plans →
+      </a>
+    {% else %}
+      <p class="text-sm text-gray-400">No plans yet.</p>
+      {% if can_write %}
+<a href="{% url 'planning:daily_plan_create' %}"
+         class="mt-3 text-sm text-blue-600 hover:underline font-medium">
+        Create your first plan →
+      </a>
+{% else %}
+<p class="mt-3 text-sm text-gray-400" title="Only Leaders and Admins can create plans. Your role is {{ user.profile.role_label }}.">Contact a Leader or Admin to create one.</p>
+{% endif %}
+    {% endif %}
+  </div>
+  {% endif %}
+</div>
+
+
+<script>
+// ── Dependent filter: Work Center → Subprocess ──────────────────────────────
+// The subprocess list is filtered client-side from data already in the DOM, so
+// changing Work Center costs no request and cannot produce an invalid pair.
+(function () {
+  const wcSel = document.querySelector('select[name="wc"], select[name="work_center"]');
+  const spSel = document.querySelector('select[name="subprocess"]');
+  if (!wcSel || !spSel) return;
+
+  // Remember every option once, with the work center it belongs to.
+  const all = Array.from(spSel.options).map(o => ({
+    value: o.value, text: o.textContent.trim(), wc: o.dataset.wc || "",
+  }));
+
+  function refresh(keepValue) {
+    const wc = wcSel.value;
+    const wanted = keepValue !== undefined ? keepValue : spSel.value;
+    spSel.innerHTML = "";
+    all.filter(o => !o.value || !wc || o.wc === wc).forEach(o => {
+      const opt = document.createElement("option");
+      opt.value = o.value;
+      opt.textContent = o.text;
+      if (o.wc) opt.dataset.wc = o.wc;
+      spSel.appendChild(opt);
+    });
+    // Keep the current subprocess only if it still belongs to the work center.
+    const stillValid = Array.from(spSel.options).some(o => o.value === wanted);
+    spSel.value = stillValid ? wanted : "";
+  }
+
+  wcSel.addEventListener("change", () => refresh(""));
+  refresh();   // apply on load so a bookmarked URL shows a coherent list
+})();
+</script>
+{% endblock %}

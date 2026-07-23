@@ -1,0 +1,35 @@
+{# templates/planning/plan_confirm_delete.html #}
+{% extends "base.html" %}
+{% block title %}Delete Plan{% endblock %}
+{% block page_title %}Delete Plan{% endblock %}
+
+{% block content %}
+<div class="max-w-md">
+  <div class="bg-white rounded-xl border border-red-200 shadow-sm p-6">
+    <div class="flex items-start gap-4">
+      <div class="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center flex-shrink-0">
+        <i class="fas fa-triangle-exclamation text-red-500"></i>
+      </div>
+      <div>
+        <h2 class="text-base font-semibold text-gray-900">Delete this plan?</h2>
+        <p class="text-sm text-gray-500 mt-1">
+          <span class="font-medium text-gray-800">{{ plan }}</span> and all its hourly rows will be permanently removed.
+        </p>
+        <div class="flex gap-3 mt-5">
+          <form method="post">
+            {% csrf_token %}
+            <button type="submit"
+                    class="bg-red-600 hover:bg-red-700 text-white text-sm font-semibold px-5 py-2.5 rounded-lg transition">
+              Yes, delete
+            </button>
+          </form>
+          <a href="{% url 'planning:daily_plan_list' %}"
+             class="text-sm text-gray-500 hover:text-gray-800 px-4 py-2.5 rounded-lg border border-gray-200 hover:border-gray-300 transition">
+            Cancel
+          </a>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

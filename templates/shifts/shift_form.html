@@ -1,0 +1,294 @@
+{# templates/shifts/shift_form.html #}
+{% extends "base.html" %}
+
+{% block title %}{{ action }} Shift — MTE Hr×Hr{% endblock %}
+{% block page_title %}{{ action }} Shift{% endblock %}
+
+{% block content %}
+<div class="max-w-md">
+  <div class="bg-white rounded-xl border border-gray-200 shadow-sm p-6">
+
+    {# Shift preview #}
+    <div class="mb-6 p-4 rounded-xl bg-gradient-to-br from-slate-800 to-slate-900 text-white" id="shift-preview">
+      <div class="flex items-center gap-3 mb-3">
+        <div class="w-10 h-10 rounded-full bg-white/10 flex items-center justify-center" id="preview-icon">
+          <i class="fas fa-clock text-white/60"></i>
+        </div>
+        <div>
+          <p class="font-bold text-sm leading-tight" id="preview-name">Shift Name</p>
+          <span class="mono text-xs text-white/50" id="preview-code">CODE</span>
+        </div>
+      </div>
+      <div class="mono text-lg font-bold" id="preview-time">--:-- – --:--</div>
+      <div class="text-xs text-white/50 mt-1 font-medium tracking-wide" id="preview-days">
+        No days selected
+      </div>
+    </div>
+
+    <form method="post" novalidate>
+      {% csrf_token %}
+      <div class="space-y-4">
+
+        <div class="grid grid-cols-2 gap-3">
+
+          {# Name #}
+          <div>
+            <label class="block text-xs font-semibold text-gray-600 mb-1.5 uppercase tracking-wide">
+              Name <span class="text-red-400">*</span>
+            </label>
+            {{ form.name }}
+            {% if form.name.errors %}
+            <p class="text-xs text-red-500 mt-1">{{ form.name.errors.0 }}</p>
+            {% endif %}
+          </div>
+
+          {# Code #}
+          <div>
+            <label class="block text-xs font-semibold text-gray-600 mb-1.5 uppercase tracking-wide">
+              Code <span class="text-red-400">*</span>
+            </label>
+            {{ form.code }}
+            {% if form.code.errors %}
+            <p class="text-xs text-red-500 mt-1">{{ form.code.errors.0 }}</p>
+            {% endif %}
+          </div>
+
+        </div>
+
+        {# Start / End times #}
+        <div class="grid grid-cols-2 gap-3">
+
+          <div>
+            <label class="block text-xs font-semibold text-gray-600 mb-1.5 uppercase tracking-wide">
+              Start Time <span class="text-red-400">*</span>
+            </label>
+            {{ form.start_time }}
+            {% if form.start_time.errors %}
+            <p class="text-xs text-red-500 mt-1">{{ form.start_time.errors.0 }}</p>
+            {% endif %}
+          </div>
+
+          <div>
+            <label class="block text-xs font-semibold text-gray-600 mb-1.5 uppercase tracking-wide">
+              End Time <span class="text-red-400">*</span>
+            </label>
+            {{ form.end_time }}
+            {% if form.end_time.errors %}
+            <p class="text-xs text-red-500 mt-1">{{ form.end_time.errors.0 }}</p>
+            {% endif %}
+          </div>
+
+        </div>
+
+        {# ── Días de la semana ──────────────────────────────────────────── #}
+        <div>
+          <label class="block text-xs font-semibold text-gray-600 mb-2 uppercase tracking-wide">
+            <i class="fas fa-calendar-week mr-1 text-gray-400"></i>
+            Applicable Days <span class="text-red-400">*</span>
+          </label>
+
+          {# Toggle buttons: Lun – Dom #}
+          {% with selected=form.selected_day_ints %}
+          <div class="grid grid-cols-7 gap-1.5" id="days-grid">
+
+            {% for val, label in form.days_of_week.field.choices %}
+            <label class="cursor-pointer select-none" title="{{ label }}">
+
+              {# Checkbox real (oculto) — lo que Django lee en el POST #}
+              <input type="checkbox"
+                     name="days_of_week"
+                     value="{{ val }}"
+                     class="peer sr-only"
+                     {% if val in selected %}checked{% endif %}>
+
+              {# Pill visible — azul para Mon–Fri, violeta para Sáb/Dom #}
+              <span class="flex flex-col items-center justify-center
+                           w-full py-2.5 rounded-lg border text-xs font-bold
+                           transition-all duration-150 cursor-pointer
+                           border-gray-200 text-gray-400 bg-white
+                           hover:border-blue-400 hover:text-blue-500
+                           {% if val >= 5 %}
+                             peer-checked:bg-violet-600 peer-checked:text-white
+                             peer-checked:border-violet-600 peer-checked:shadow-sm
+                             hover:border-violet-400
+                           {% else %}
+                             peer-checked:bg-blue-600 peer-checked:text-white
+                             peer-checked:border-blue-600 peer-checked:shadow-sm
+                           {% endif %}">
+                {{ label|slice:":3" }}
+              </span>
+
+            </label>
+            {% endfor %}
+
+          </div>
+          {% endwith %}
+
+          {# Acceso rápido: Mon–Fri / todos / ninguno #}
+          <div class="flex items-center gap-2 mt-2">
+            <span class="text-[10px] text-gray-400 font-semibold uppercase tracking-wide">Quick select:</span>
+            <button type="button" onclick="selectDays([0,1,2,3,4])"
+                    class="text-[11px] text-blue-600 hover:text-blue-800 font-semibold hover:underline">
+              Mon – Fri
+            </button>
+            <span class="text-gray-300">·</span>
+            <button type="button" onclick="selectDays([0,1,2,3,4,5,6])"
+                    class="text-[11px] text-blue-600 hover:text-blue-800 font-semibold hover:underline">
+              All
+            </button>
+            <span class="text-gray-300">·</span>
+            <button type="button" onclick="selectDays([])"
+                    class="text-[11px] text-gray-400 hover:text-gray-600 font-semibold hover:underline">
+              None
+            </button>
+          </div>
+
+          {% if form.days_of_week.errors %}
+          <p class="text-xs text-red-500 mt-1">{{ form.days_of_week.errors.0 }}</p>
+          {% endif %}
+        </div>
+
+        {# Midnight crossing notice #}
+        <div id="midnight-notice"
+             class="hidden items-center gap-2 rounded-lg bg-indigo-50 border border-indigo-100 px-4 py-2.5 text-xs text-indigo-700 font-medium">
+          <i class="fas fa-arrow-right-arrow-left"></i>
+          This shift crosses midnight (start time > end time).
+        </div>
+
+        {# Active #}
+        <div class="flex items-center gap-3 bg-gray-50 rounded-lg px-4 py-3">
+          {{ form.is_active }}
+
+          <label class="text-sm font-medium text-gray-700 cursor-pointer"
+                 for="{{ form.is_active.id_for_label }}">
+
+            Active Shift
+
+            <span class="block text-xs text-gray-400 font-normal mt-0.5">
+              Inactive shifts will not appear in Daily Plan selectors.
+            </span>
+
+          </label>
+        </div>
+
+        {% if form.non_field_errors %}
+        <div class="rounded-lg border border-red-200 bg-red-50 px-4 py-2.5 text-sm text-red-700">
+          {{ form.non_field_errors.0 }}
+        </div>
+        {% endif %}
+
+      </div>
+
+      <div class="flex items-center gap-3 mt-6 pt-5 border-t border-gray-100">
+
+        <button type="submit"
+                class="bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold px-5 py-2.5 rounded-lg transition">
+          <i class="fas fa-save mr-1.5"></i>{{ action }}
+        </button>
+
+        <a href="{% url 'core:shift_list' %}"
+           class="text-sm text-gray-500 hover:text-gray-800 px-4 py-2.5 rounded-lg border border-gray-200 hover:border-gray-300 transition">
+          Cancel
+        </a>
+
+      </div>
+    </form>
+  </div>
+</div>
+
+<script>
+(function () {
+
+  const nameInput  = document.getElementById("{{ form.name.id_for_label }}");
+  const codeInput  = document.getElementById("{{ form.code.id_for_label }}");
+  const startInput = document.getElementById("{{ form.start_time.id_for_label }}");
+  const endInput   = document.getElementById("{{ form.end_time.id_for_label }}");
+
+  const previewName = document.getElementById("preview-name");
+  const previewCode = document.getElementById("preview-code");
+  const previewTime = document.getElementById("preview-time");
+  const previewIcon = document.getElementById("preview-icon");
+  const midnight    = document.getElementById("midnight-notice");
+
+  function updatePreview() {
+
+    const name  = nameInput?.value  || "Shift Name";
+    const code  = codeInput?.value  || "CODE";
+    const start = startInput?.value || "--:--";
+    const end   = endInput?.value   || "--:--";
+
+    if (previewName) previewName.textContent = name;
+    if (previewCode) previewCode.textContent = code.toUpperCase();
+    if (previewTime) previewTime.textContent = `${start} – ${end}`;
+
+    // Mostrar días seleccionados en el preview
+    const dayShort = ['Lun','Mar','Mié','Jue','Vie','Sáb','Dom'];
+    const checked  = [...document.querySelectorAll('input[name="days_of_week"]:checked')]
+                       .map(cb => dayShort[parseInt(cb.value)]);
+    const previewDays = document.getElementById('preview-days');
+    if (previewDays) {
+      previewDays.textContent = checked.length ? checked.join(' · ') : 'No days selected';
+      previewDays.style.opacity = checked.length ? '1' : '0.4';
+    }
+
+    // Icon based on start hour
+    if (startInput?.value) {
+
+      const h = parseInt(startInput.value.split(":")[0], 10);
+
+      let icon = "fa-clock";
+
+      if (h >= 5 && h < 14) {
+        icon = "fa-sun";
+      }
+      else if (h >= 14 && h < 22) {
+        icon = "fa-cloud-sun";
+      }
+      else {
+        icon = "fa-moon";
+      }
+
+      if (previewIcon) {
+        previewIcon.innerHTML = `<i class="fas ${icon} text-white"></i>`;
+      }
+    }
+
+    // Midnight crossing detection
+    if (startInput?.value && endInput?.value) {
+
+      const s = startInput.value;
+      const e = endInput.value;
+
+      const crosses = s > e;
+
+      midnight?.classList.toggle("hidden", !crosses);
+      midnight?.classList.toggle("flex", crosses);
+    }
+  }
+
+  // Actualizar preview también cuando cambian los checkboxes de días
+  document.querySelectorAll('input[name="days_of_week"]').forEach(cb => {
+    cb.addEventListener('change', updatePreview);
+  });
+
+  [nameInput, codeInput, startInput, endInput].forEach(el => {
+    if (el) {
+      el.addEventListener("input", updatePreview);
+    }
+  });
+
+  updatePreview();
+
+})();
+
+// ── Selección rápida de días ──────────────────────────────────────────────────
+function selectDays(dayValues) {
+  document.querySelectorAll('input[name="days_of_week"]').forEach(cb => {
+    cb.checked = dayValues.includes(parseInt(cb.value));
+  });
+  // Disparar evento change para actualizar preview
+  document.querySelector('input[name="days_of_week"]')
+    ?.dispatchEvent(new Event('change'));
+}
+</script>
+{% endblock %}

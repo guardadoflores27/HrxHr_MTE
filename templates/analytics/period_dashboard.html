@@ -1,0 +1,347 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}Period Dashboard — MTE Hr×Hr{% endblock %}
+{% block page_title %}Period Dashboard <span class="text-xs font-normal text-slate-400">(read-only)</span>{% endblock %}
+
+{% block extra_head %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+{% endblock %}
+
+{% block content %}
+<div class="p-6 space-y-6">
+
+  {# ── Period selector + filters ─────────────────────────────────────────── #}
+  <form method="get" class="flex flex-wrap items-end gap-3 bg-white rounded-xl border border-slate-200 p-4">
+
+    <input type="hidden" name="period" value="{{ period }}">
+    <div>
+      <label class="block text-[11px] font-semibold uppercase tracking-wide text-slate-500 mb-1">Date (anchor)</label>
+      <input type="date" name="anchor" value="{{ anchor }}"
+             class="rounded-lg border border-slate-300 px-3 py-1.5 text-sm">
+    </div>
+    <div>
+      <label class="block text-[11px] font-semibold uppercase tracking-wide text-slate-500 mb-1">Work Center</label>
+      <select name="wc" class="rounded-lg border border-slate-300 px-3 py-1.5 text-sm">
+        <option value="">All</option>
+        {% for wc in work_centers %}
+          <option value="{{ wc.id }}" {% if filters.wc == wc.id|stringformat:'s' %}selected{% endif %}>{{ wc.name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div>
+      <label class="block text-[11px] font-semibold uppercase tracking-wide text-slate-500 mb-1">Subprocess</label>
+      <select name="subprocess" class="rounded-lg border border-slate-300 px-3 py-1.5 text-sm">
+        <option value="">All</option>
+        {% for sp in subprocesses %}
+          <option value="{{ sp.id }}" data-wc="{{ sp.work_center_id }}" {% if filters.subprocess == sp.id|stringformat:'s' %}selected{% endif %}>{{ sp.work_center.name }} · {{ sp.name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div>
+      <label class="block text-[11px] font-semibold uppercase tracking-wide text-slate-500 mb-1">Shift</label>
+      <select name="shift" class="rounded-lg border border-slate-300 px-3 py-1.5 text-sm">
+        <option value="">All</option>
+        {% for s in shifts %}
+          <option value="{{ s.id }}" {% if filters.shift == s.id|stringformat:'s' %}selected{% endif %}>{{ s.name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <button type="submit" class="bg-slate-800 text-white rounded-lg px-4 py-1.5 text-sm font-semibold hover:bg-slate-700">
+      <i class="fas fa-filter mr-1"></i> Apply
+    </button>
+
+    {# Export buttons — reuse the current period/filter query string. #}
+    <div class="ml-auto flex items-center gap-2">
+      <a id="exportPeriodExcel"
+         class="inline-flex items-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-sm font-semibold text-emerald-700 hover:bg-emerald-100">
+        <i class="fas fa-file-excel"></i> Excel
+      </a>
+      <a id="exportPeriodPdf"
+         class="inline-flex items-center gap-1.5 rounded-lg border border-red-200 bg-red-50 px-3 py-1.5 text-sm font-semibold text-red-700 hover:bg-red-100">
+        <i class="fas fa-file-pdf"></i> PDF
+      </a>
+    </div>
+  </form>
+
+  {# ── Period header banner ──────────────────────────────────────────────── #}
+  <div class="relative overflow-hidden rounded-2xl border border-slate-200 shadow-sm
+              bg-gradient-to-r from-slate-800 via-slate-800 to-slate-700 text-white">
+    <div class="relative px-6 py-5 flex flex-wrap items-center justify-between gap-4">
+      <div class="flex items-center gap-4">
+        <div class="flex h-12 w-12 items-center justify-center rounded-xl bg-white/10">
+          <i class="fas
+            {% if period == 'day' %}fa-calendar-day
+            {% elif period == 'week' %}fa-calendar-week
+            {% elif period == 'month' %}fa-calendar-alt
+            {% else %}fa-calendar{% endif %} text-xl"></i>
+        </div>
+        <div>
+          <div class="flex items-center gap-2">
+            <span class="text-[10px] font-bold uppercase tracking-widest bg-white/15 rounded-full px-2.5 py-0.5">
+              {{ period|title }} View
+            </span>
+          </div>
+          <p class="text-xl font-bold mt-1 leading-tight">{{ report.meta.label }}</p>
+          <p class="text-xs text-slate-300 mt-0.5">
+            {{ report.meta.start }} &nbsp;to&nbsp; {{ report.meta.end }}
+          </p>
+        </div>
+      </div>
+
+      {# Quick period switch pills — keep current date & filters #}
+      <div class="flex items-center gap-1 bg-white/10 rounded-xl p-1">
+        {% for p in "day.week.month.year"|slice:":0" %}{% endfor %}
+        <a href="?period=day&anchor={{ anchor }}{% if filters.wc %}&wc={{ filters.wc }}{% endif %}{% if filters.shift %}&shift={{ filters.shift }}{% endif %}"
+           class="px-3 py-1.5 text-xs font-semibold rounded-lg transition {% if period == 'day' %}bg-white text-slate-800{% else %}text-slate-200 hover:bg-white/10{% endif %}">Day</a>
+        <a href="?period=week&anchor={{ anchor }}{% if filters.wc %}&wc={{ filters.wc }}{% endif %}{% if filters.shift %}&shift={{ filters.shift }}{% endif %}"
+           class="px-3 py-1.5 text-xs font-semibold rounded-lg transition {% if period == 'week' %}bg-white text-slate-800{% else %}text-slate-200 hover:bg-white/10{% endif %}">Week</a>
+        <a href="?period=month&anchor={{ anchor }}{% if filters.wc %}&wc={{ filters.wc }}{% endif %}{% if filters.shift %}&shift={{ filters.shift }}{% endif %}"
+           class="px-3 py-1.5 text-xs font-semibold rounded-lg transition {% if period == 'month' %}bg-white text-slate-800{% else %}text-slate-200 hover:bg-white/10{% endif %}">Month</a>
+        <a href="?period=year&anchor={{ anchor }}{% if filters.wc %}&wc={{ filters.wc }}{% endif %}{% if filters.shift %}&shift={{ filters.shift }}{% endif %}"
+           class="px-3 py-1.5 text-xs font-semibold rounded-lg transition {% if period == 'year' %}bg-white text-slate-800{% else %}text-slate-200 hover:bg-white/10{% endif %}">Year</a>
+      </div>
+    </div>
+
+  </div>
+
+  {# ── Production ────────────────────────────────────────────────────── #}
+  <div>
+    <h3 class="text-[11px] font-bold uppercase tracking-widest text-slate-400 mb-2">Production</h3>
+    <div class="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-3">
+    {% include "analytics/_kpi_card.html" with label="Planned Pieces" value=report.totals.planned_pieces suffix="" icon="fa-clipboard-list" tone="blue" help="Total pieces planned for this period. Stored quantities are in units and divided by the subprocess conversion factor to give pieces." %}
+    {% include "analytics/_kpi_card.html" with label="Actual Pieces" value=report.totals.actual_pieces suffix="" icon="fa-boxes-stacked" tone="emerald" help="Total pieces actually produced in this period, converted from units using the same conversion factor as the plan." %}
+    {% include "analytics/_kpi_card.html" with label="Completion" value=report.totals.completion_pct suffix="%" icon="fa-bullseye" tone="violet" help="How much of the plan was fulfilled: actual divided by planned, as a percentage. Above 100% means the plan was exceeded." %}
+    {% include "analytics/_kpi_card.html" with label="Difference" value=report.totals.difference_pieces suffix="" icon="fa-scale-balanced" tone="amber" help="Actual pieces minus planned pieces. A negative number means the period finished below plan." %}
+    {% include "analytics/_kpi_card.html" with label="Total Scrap" value=report.totals.scrap_units suffix=" u" icon="fa-trash-can" tone="rose" help="Total scrap recorded across this period, in units. Scrap is captured per hour alongside the actual quantity and is NOT counted as good production." %}
+    </div>
+  </div>
+
+  {# ── Working time ──────────────────────────────────────────────────── #}
+  <div>
+    <h3 class="text-[11px] font-bold uppercase tracking-widest text-slate-400 mb-2">Working Time</h3>
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+    {% include "analytics/_kpi_card.html" with label="Scheduled Hrs" value=report.working_hours.scheduled_hours suffix="" icon="fa-clock" tone="slate" help="Number of production hours captured in this period, including any overtime hours." %}
+    {% include "analytics/_kpi_card.html" with label="Real Working Hrs" value=report.working_hours.real_working_hours suffix="" icon="fa-gears" tone="emerald" help="Scheduled hours minus all recorded downtime (planned and unplanned). This is the time actually spent producing." %}
+    {% include "analytics/_kpi_card.html" with label="Overtime Hrs" value=report.working_hours.overtime_hours suffix="" icon="fa-business-time" tone="rose" help="Hours flagged as overtime within this period, counted separately from regular scheduled hours." %}
+    {% include "analytics/_kpi_card.html" with label="Planned DT" value=report.working_hours.planned_downtime_min suffix=" min" icon="fa-calendar-check" tone="amber" help="Minutes lost to intentionally scheduled stops such as lunch, operation preparation and work finalization." %}
+    </div>
+  </div>
+
+  {# ── Charts ────────────────────────────────────────────────────────────── #}
+  <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+    <div class="bg-white rounded-xl border border-slate-200 p-5">
+      <h3 class="text-sm font-semibold text-slate-700 mb-3">Planned vs Actual{% include "analytics/_info.html" with text="Planned versus actual pieces for each sub-period, so you can see which days or weeks drove the result." %} <span class="text-xs text-slate-400">(pieces, by {{ report.meta.inner_period }})</span></h3>
+
+      <div style="height:260px"><canvas id="pvaChart"></canvas></div>
+    </div>
+    <div class="bg-white rounded-xl border border-slate-200 p-5">
+      <h3 class="text-sm font-semibold text-slate-700 mb-3">Productivity Trend{% include "analytics/_info.html" with text="Actual output as a percentage of plan over time. A downward slope means performance is degrading." %} <span class="text-xs text-slate-400">(%)</span></h3>
+      <canvas id="prodChart" height="200"></canvas>
+    </div>
+    <div class="bg-white rounded-xl border border-slate-200 p-5">
+      <h3 class="text-sm font-semibold text-slate-700 mb-3">Comment Distribution{% include "analytics/_info.html" with text="How the production hours in this period were classified: plan achieved, not achieved, exceeded, or non-productive." %}</h3>
+      <canvas id="commentChart" height="200"></canvas>
+    </div>
+    <div class="bg-white rounded-xl border border-slate-200 p-5">
+      <h3 class="text-sm font-semibold text-slate-700 mb-3">Units vs Pieces{% include "analytics/_info.html" with text="The same production shown in raw units and in converted pieces, clarifying the effect of the conversion factor." %}</h3>
+      <canvas id="uvpChart" height="200"></canvas>
+    </div>
+  </div>
+
+  {# ── Model summary ─────────────────────────────────────────────────────── #}
+  <div class="bg-white rounded-xl border border-slate-200 overflow-hidden">
+    <h3 class="text-sm font-semibold text-slate-700 px-5 py-3 border-b border-slate-100">Model Summary{% include "analytics/_info.html" with text="Planned versus actual output per model, with productivity, to identify which models are underperforming." %}</h3>
+    <div class="overflow-x-auto">
+      <table class="min-w-full text-xs">
+        <thead class="bg-slate-50 text-slate-500 uppercase">
+          <tr>
+            <th class="px-3 py-2 text-left">Model</th>
+            <th class="px-3 py-2 text-right">Planned (pc)</th>
+            <th class="px-3 py-2 text-right">Actual (pc)</th>
+            <th class="px-3 py-2 text-right">Units P/A</th>
+            <th class="px-3 py-2 text-right">Productivity</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-slate-50">
+          {% for m in report.model_summary %}
+          <tr>
+            <td class="px-3 py-2 font-medium">{{ m.model }}</td>
+            <td class="px-3 py-2 text-right font-mono">{{ m.planned_pieces }}</td>
+            <td class="px-3 py-2 text-right font-mono">{{ m.actual_pieces }}</td>
+            <td class="px-3 py-2 text-right font-mono text-slate-400">{{ m.planned_units }}/{{ m.actual_units }}</td>
+            <td class="px-3 py-2 text-right font-mono">{% if m.productivity_pct is None %}—{% else %}{{ m.productivity_pct }}%{% endif %}</td>
+          </tr>
+          {% empty %}
+          <tr><td colspan="5" class="px-3 py-6 text-center text-slate-400">No data for this period.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+const REPORT = {{ report_json|default:"null" }};
+// Data is embedded server-side; charts read from the JSON API for auto-refresh.
+const qs = window.location.search;
+function apiPeriod() {
+  return fetch("{% url 'analytics:api_period_data' %}" + qs).then(r => r.json());
+}
+
+let charts = {};
+function draw(id, cfg) {
+  if (charts[id]) { charts[id].data = cfg.data; charts[id].update(); }
+  else { charts[id] = new Chart(document.getElementById(id), cfg); }
+}
+
+function render(rep) {
+  const pva = rep.trend.planned_vs_actual;
+  // Bucket keys arrive as ISO dates; render them as readable labels that match
+  // the granularity actually being shown (day / week / month / year).
+  const inner = (rep.meta && rep.meta.inner_period) || "day";
+  const fmtBucket = (key) => {
+    const d = new Date(key + "T00:00:00");
+    if (isNaN(d)) return key;
+    if (inner === "month") return d.toLocaleDateString(undefined, { month: "short", year: "numeric" });
+    if (inner === "week")  return "Wk of " + d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+    return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  };
+
+  draw("pvaChart", {
+    type: "bar",
+    data: {
+      labels: pva.map(r => fmtBucket(r.bucket)),
+      datasets: [
+        { label: "Planned",
+          data: pva.map(r => r.planned),
+          backgroundColor: "rgba(59,130,246,0.30)",
+          borderColor: "#3b82f6", borderWidth: 1.5,
+          borderRadius: 6, borderSkipped: false,
+          categoryPercentage: 0.7, barPercentage: 0.9 },
+        // Actual is coloured per bar: green when it met the plan, red when it
+        // fell short — so a weak period is visible without reading numbers.
+        { label: "Actual",
+          data: pva.map(r => r.actual),
+          backgroundColor: pva.map(r =>
+            (r.actual >= r.planned && r.planned > 0) ? "rgba(16,185,129,0.85)"
+                                                     : "rgba(239,68,68,0.75)"),
+          borderColor: pva.map(r =>
+            (r.actual >= r.planned && r.planned > 0) ? "#10b981" : "#ef4444"),
+          borderWidth: 1.5, borderRadius: 6, borderSkipped: false,
+          categoryPercentage: 0.7, barPercentage: 0.9 },
+      ]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: "index", intersect: false },
+      plugins: {
+        legend: { position: "top", labels: { usePointStyle: true, boxWidth: 8, font: { size: 11 } } },
+        tooltip: {
+          padding: 10,
+          callbacks: {
+            // Show the gap and the completion % right in the tooltip.
+            afterBody: (items) => {
+              const i = items[0].dataIndex;
+              const p = pva[i].planned || 0, a = pva[i].actual || 0;
+              const diff = (a - p).toFixed(2);
+              const pct  = p ? Math.round(a / p * 100) : null;
+              return [
+                `Difference: ${diff > 0 ? "+" : ""}${diff} pc`,
+                pct === null ? "Completion: —" : `Completion: ${pct}%`,
+              ];
+            }
+          }
+        }
+      },
+      scales: {
+        y: { beginAtZero: true,
+             title: { display: true, text: "Pieces", font: { size: 11 } },
+             grid: { color: "rgba(148,163,184,0.15)" },
+             ticks: { font: { size: 10 } } },
+        x: { grid: { display: false }, ticks: { font: { size: 10 }, maxRotation: 0, autoSkipPadding: 12 } },
+      }
+    }
+  });
+
+  const prod = rep.trend.productivity;
+  draw("prodChart", {
+    type: "line",
+    data: { labels: prod.map(r => r.bucket),
+            datasets: [{ label: "Productivity %", data: prod.map(r => r.productivity_pct),
+                         borderColor: "#8b5cf6", backgroundColor: "#8b5cf622", fill: true, tension: 0.3 }] },
+    options: { responsive: true, scales: { y: { beginAtZero: true } } }
+  });
+
+  const cd = rep.comment_distribution;
+  draw("commentChart", {
+    type: "doughnut",
+    data: { labels: cd.map(c => c.type),
+            datasets: [{ data: cd.map(c => c.count),
+              backgroundColor: ["#10b981","#ef4444","#3b82f6","#94a3b8","#f59e0b"] }] },
+    options: { responsive: true, plugins: { legend: { position: "right" } } }
+  });
+
+  const uvp = rep.units_vs_pieces;
+  draw("uvpChart", {
+    type: "bar",
+    data: { labels: ["Planned", "Actual"], datasets: [
+      { label: "Units",  data: [uvp.planned_units, uvp.actual_units],  backgroundColor: "rgba(148,163,184,0.6)" },
+      { label: "Pieces", data: [uvp.planned_pieces, uvp.actual_pieces], backgroundColor: "rgba(99,102,241,0.7)" },
+    ]},
+    options: { responsive: true, scales: { y: { beginAtZero: true } } }
+  });
+}
+
+apiPeriod().then(render);
+setInterval(() => apiPeriod().then(render), 30000);  // auto-refresh, no reload
+
+// Point the export buttons at the current period + filters.
+(function wireExports() {
+  const q = window.location.search || "?period=day";
+  const xl = document.getElementById("exportPeriodExcel");
+  const pdf = document.getElementById("exportPeriodPdf");
+  if (xl)  xl.href  = "{% url 'analytics:export_period' 'excel' %}" + q;
+  if (pdf) pdf.href = "{% url 'analytics:export_period' 'pdf' %}" + q;
+})();
+</script>
+
+<script>
+// ── Dependent filter: Work Center → Subprocess ──────────────────────────────
+// The subprocess list is filtered client-side from data already in the DOM, so
+// changing Work Center costs no request and cannot produce an invalid pair.
+(function () {
+  const wcSel = document.querySelector('select[name="wc"], select[name="work_center"]');
+  const spSel = document.querySelector('select[name="subprocess"]');
+  if (!wcSel || !spSel) return;
+
+  // Remember every option once, with the work center it belongs to.
+  const all = Array.from(spSel.options).map(o => ({
+    value: o.value, text: o.textContent.trim(), wc: o.dataset.wc || "",
+  }));
+
+  function refresh(keepValue) {
+    const wc = wcSel.value;
+    const wanted = keepValue !== undefined ? keepValue : spSel.value;
+    spSel.innerHTML = "";
+    all.filter(o => !o.value || !wc || o.wc === wc).forEach(o => {
+      const opt = document.createElement("option");
+      opt.value = o.value;
+      opt.textContent = o.text;
+      if (o.wc) opt.dataset.wc = o.wc;
+      spSel.appendChild(opt);
+    });
+    // Keep the current subprocess only if it still belongs to the work center.
+    const stillValid = Array.from(spSel.options).some(o => o.value === wanted);
+    spSel.value = stillValid ? wanted : "";
+  }
+
+  wcSel.addEventListener("change", () => refresh(""));
+  refresh();   // apply on load so a bookmarked URL shows a coherent list
+})();
+</script>
+{% endblock %}

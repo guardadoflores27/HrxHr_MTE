@@ -1,0 +1,144 @@
+{# templates/core/spt_form.html #}
+{# ─────────────────────────────────────────────────────────────────────────── #}
+{# hrxhr_project/templates/core/spt_form.html  (NEW FILE)        #}
+{# ─────────────────────────────────────────────────────────────────────────── #}
+{% extends "base.html" %}
+
+{% block title %}{{ action }} — MTE Hr×Hr{% endblock %}
+{% block page_title %}{{ action }}{% endblock %}
+
+{% block content %}
+<div class="max-w-lg">
+  <div class="bg-white rounded-xl border border-gray-200 shadow-sm p-6">
+
+    {# Live preview card #}
+    <div class="mb-6 p-4 rounded-xl bg-gradient-to-br from-slate-800 to-slate-900 text-white"
+         id="spt-preview">
+      <div class="flex items-center justify-between mb-3">
+        <p class="font-bold text-sm" id="prev-name">Type Name</p>
+        <span class="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-white/10"
+              id="prev-applies">—</span>
+      </div>
+      <div class="flex items-center gap-3">
+        <i class="fas fa-cubes text-white/40 text-xl"></i>
+        <div>
+          <p class="text-[10px] text-white/40 uppercase tracking-wide">Units per piece</p>
+          <p class="mono font-bold text-lg" id="prev-upc">1</p>
+        </div>
+        <div class="ml-4 border-l border-white/10 pl-4">
+          <p class="text-[10px] text-white/40 uppercase tracking-wide">Label</p>
+          <p class="text-xs text-white/60 font-medium" id="prev-label">1 piece = 1 unit</p>
+        </div>
+      </div>
+    </div>
+
+    <form method="post" novalidate>
+      {% csrf_token %}
+      <div class="space-y-5">
+
+        {# Name #}
+        <div>
+          <label class="block text-xs font-semibold text-gray-600 mb-1.5 uppercase tracking-wide">
+            Name <span class="text-red-400">*</span>
+          </label>
+          {{ form.name }}
+          {% if form.name.errors %}
+          <p class="text-xs text-red-500 mt-1">{{ form.name.errors.0 }}</p>
+          {% endif %}
+        </div>
+
+        {# Applies to #}
+        <div>
+          <label class="block text-xs font-semibold text-gray-600 mb-1.5 uppercase tracking-wide">
+            Applies to <span class="text-red-400">*</span>
+          </label>
+          {{ form.applies_to }}
+          <p class="text-[11px] text-gray-400 mt-1">
+            {{ form.applies_to.help_text }}
+          </p>
+          {% if form.applies_to.errors %}
+          <p class="text-xs text-red-500 mt-1">{{ form.applies_to.errors.0 }}</p>
+          {% endif %}
+        </div>
+
+        {# Units per piece #}
+        <div>
+          <label class="block text-xs font-semibold text-gray-600 mb-1.5 uppercase tracking-wide">
+            Units per Piece <span class="text-red-400">*</span>
+          </label>
+          {{ form.units_per_piece }}
+          <p class="text-[11px] text-gray-400 mt-1">
+            {{ form.units_per_piece.help_text }}
+          </p>
+          {% if form.units_per_piece.errors %}
+          <p class="text-xs text-red-500 mt-1">{{ form.units_per_piece.errors.0 }}</p>
+          {% endif %}
+        </div>
+
+        {# Active toggle #}
+        <div class="flex items-center gap-3 bg-gray-50 rounded-lg px-4 py-3">
+          {{ form.is_active }}
+          <label class="text-sm font-medium text-gray-700 cursor-pointer"
+                 for="{{ form.is_active.id_for_label }}">
+            Active
+            <span class="block text-xs text-gray-400 font-normal mt-0.5">
+              Inactive types won't appear when creating subprocesses.
+            </span>
+          </label>
+        </div>
+
+        {% if form.non_field_errors %}
+        <div class="rounded-lg border border-red-200 bg-red-50 px-4 py-2.5 text-sm text-red-700">
+          {{ form.non_field_errors.0 }}
+        </div>
+        {% endif %}
+
+      </div>
+
+      <div class="flex items-center gap-3 mt-6 pt-5 border-t border-gray-100">
+        <button type="submit"
+                class="bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold
+                       px-5 py-2.5 rounded-lg transition">
+          <i class="fas fa-save mr-1.5"></i>{{ action }}
+        </button>
+        <a href="{% url 'core:spt_list' %}"
+           class="text-sm text-gray-500 hover:text-gray-800 px-4 py-2.5 rounded-lg
+                  border border-gray-200 hover:border-gray-300 transition">
+          Cancel
+        </a>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script>
+(function () {
+  const nameInp  = document.getElementById("{{ form.name.id_for_label }}");
+  const appSel   = document.getElementById("{{ form.applies_to.id_for_label }}");
+  const upcInp   = document.getElementById("{{ form.units_per_piece.id_for_label }}");
+
+  const prevName   = document.getElementById("prev-name");
+  const prevApply  = document.getElementById("prev-applies");
+  const prevUpc    = document.getElementById("prev-upc");
+  const prevLabel  = document.getElementById("prev-label");
+
+  function update() {
+    const name = nameInp?.value.trim()  || "Type Name";
+    const upc  = parseInt(upcInp?.value, 10) || 1;
+    const app  = appSel?.options[appSel.selectedIndex]?.text || "—";
+
+    if (prevName)  prevName.textContent  = name;
+    if (prevApply) prevApply.textContent = app;
+    if (prevUpc)   prevUpc.textContent   = upc;
+    if (prevLabel) {
+      prevLabel.textContent = upc === 1
+        ? "1 piece = 1 unit"
+        : `1 piece = ${upc} units`;
+    }
+  }
+
+  [nameInp, appSel, upcInp].forEach(el => el?.addEventListener("input", update));
+  update();
+})();
+</script>
+{% endblock %}

@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+{% block title %}Delete User — MTE Hr×Hr{% endblock %}
+{% block page_title %}
+  <i class="fas fa-trash text-red-400 mr-2"></i>Delete User
+{% endblock %}
+
+{% block header_actions %}
+  <a href="{% url 'users:user_edit_list' %}"
+     class="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-800 transition">
+    <i class="fas fa-arrow-left text-xs"></i> Back to Edit Users
+  </a>
+{% endblock %}
+
+{% block content %}
+<div class="max-w-lg mx-auto space-y-4">
+
+  {# User identity card #}
+  <div class="bg-white border border-gray-200 rounded-xl shadow-sm px-6 py-5">
+    <div class="flex items-center gap-4">
+      <div class="w-12 h-12 rounded-full flex items-center justify-center text-white text-lg font-bold flex-shrink-0
+        {% if target.profile.role == 'admin' %}bg-rose-500
+        {% elif target.profile.role == 'leader' %}bg-emerald-500
+        {% elif target.profile.role == 'engineer' %}bg-violet-500
+        {% else %}bg-blue-500{% endif %}">
+        {{ target.username|first|upper }}
+      </div>
+      <div>
+        <p class="text-base font-semibold text-gray-900">{{ target.username }}</p>
+        <p class="text-sm text-gray-500">{{ target.get_full_name|default:"No full name" }}</p>
+        <span class="inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-semibold mt-1
+          {% if target.profile.role == 'admin' %}bg-rose-100 text-rose-700
+          {% elif target.profile.role == 'leader' %}bg-emerald-100 text-emerald-700
+          {% elif target.profile.role == 'engineer' %}bg-violet-100 text-violet-700
+          {% else %}bg-blue-100 text-blue-700{% endif %}">
+          {{ target.profile.get_role_display }}
+        </span>
+      </div>
+    </div>
+  </div>
+
+  {# Confirmation card #}
+  <div class="bg-white border border-red-200 rounded-xl shadow-sm overflow-hidden">
+    <div class="px-6 py-5 border-b border-red-100 bg-red-50">
+      <div class="flex items-center gap-3">
+        <div class="w-9 h-9 rounded-full bg-red-100 flex items-center justify-center flex-shrink-0">
+          <i class="fas fa-triangle-exclamation text-red-600 text-sm"></i>
+        </div>
+        <div>
+          <h2 class="text-sm font-semibold text-red-800">Confirm Account Deletion</h2>
+          <p class="text-xs text-red-600 mt-0.5">This action is permanent and cannot be undone.</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="px-6 py-5 space-y-4">
+      <p class="text-sm text-gray-700">
+        You are about to permanently delete the account <strong class="text-gray-900">{{ target.username }}</strong>.
+        All data associated with this account will be removed.
+      </p>
+
+      <div class="rounded-lg bg-gray-50 border border-gray-200 px-4 py-3 text-xs text-gray-600 space-y-1">
+        <p><i class="fas fa-circle-info text-blue-400 mr-1"></i>If this user needs a <strong>new password</strong>, deleting and recreating the account is the correct procedure.</p>
+        <p><i class="fas fa-circle-info text-blue-400 mr-1"></i>To change only the <strong>role</strong>, go back and use the Edit Role option instead.</p>
+      </div>
+
+      <form method="post" class="flex items-center justify-end gap-3 pt-2 border-t border-gray-100">
+        {% csrf_token %}
+        <a href="{% url 'users:user_edit_list' %}"
+           class="px-4 py-2 text-sm text-gray-600 hover:text-gray-800 font-medium transition">Cancel</a>
+        <button type="submit"
+                class="px-5 py-2 bg-red-600 hover:bg-red-500 text-white text-sm font-semibold rounded-lg transition shadow-sm flex items-center gap-1.5">
+          <i class="fas fa-trash text-xs"></i>Yes, Delete Account
+        </button>
+      </form>
+    </div>
+  </div>
+
+</div>
+{% endblock %}

@@ -1,0 +1,178 @@
+{# templates/planning/hourly_plan_board_create.html #}
+{% extends "base.html" %}
+
+{% block title %}New Hourly Plan — MTE Hr×Hr{% endblock %}
+{% block page_title %}New Hourly Plan{% endblock %}
+
+{% block header_actions %}
+<a href="{% url 'planning:hourly_plan_board' %}"
+   class="text-xs text-gray-500 hover:text-gray-800 border border-gray-200 px-3 py-1.5 rounded-lg transition">
+  ← Back to Board
+</a>
+{% endblock %}
+
+{% block content %}
+<div class="max-w-xl">
+
+  {# Intro card #}
+  <div class="bg-blue-50 border border-blue-100 rounded-xl px-5 py-4 mb-5 flex items-start gap-3">
+    <div class="w-8 h-8 rounded-lg bg-blue-100 flex items-center justify-center flex-shrink-0 mt-0.5">
+      <i class="fas fa-info-circle text-blue-500 text-sm"></i>
+    </div>
+    <div>
+      <p class="text-sm font-semibold text-blue-800 mb-0.5">Step 1 of 2 — Daily Plan</p>
+      <p class="text-xs text-blue-600">
+        Fill in the plan details below. After saving you'll be taken to add the
+        hourly targets for each shift period.
+      </p>
+    </div>
+  </div>
+
+  <div class="bg-white rounded-xl border border-gray-200 shadow-sm p-6">
+    <form method="post" novalidate>
+      {% csrf_token %}
+
+      <div class="space-y-4">
+
+        {# Date #}
+        <div>
+          <label class="block text-xs font-semibold text-gray-600 mb-1.5 uppercase tracking-wide">
+            Date <span class="text-red-400">*</span>
+          </label>
+          {{ form.date }}
+          {% if form.date.errors %}
+          <p class="text-xs text-red-500 mt-1">{{ form.date.errors.0 }}</p>
+          {% endif %}
+        </div>
+
+        {# Work Center + Subprocess #}
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-xs font-semibold text-gray-600 mb-1.5 uppercase tracking-wide">
+              Work Center <span class="text-red-400">*</span>
+            </label>
+            {{ form.work_center }}
+            {% if form.work_center.errors %}
+            <p class="text-xs text-red-500 mt-1">{{ form.work_center.errors.0 }}</p>
+            {% endif %}
+          </div>
+          <div>
+            <label class="block text-xs font-semibold text-gray-600 mb-1.5 uppercase tracking-wide">
+              Subprocess <span class="text-red-400">*</span>
+            </label>
+            {{ form.subprocess }}
+            {% if form.subprocess.errors %}
+            <p class="text-xs text-red-500 mt-1">{{ form.subprocess.errors.0 }}</p>
+            {% endif %}
+          </div>
+        </div>
+
+        {# Headcount #}
+        <div>
+          <label class="block text-xs font-semibold text-gray-600 mb-1.5 uppercase tracking-wide">
+            Headcount <span class="text-red-400">*</span>
+          </label>
+          {{ form.headcount }}
+          {% if form.headcount.errors %}
+          <p class="text-xs text-red-500 mt-1">{{ form.headcount.errors.0 }}</p>
+          {% endif %}
+        </div>
+
+        {# Shift times #}
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-xs font-semibold text-gray-600 mb-1.5 uppercase tracking-wide">
+              Shift Start <span class="text-red-400">*</span>
+            </label>
+            {{ form.shift_start_time }}
+            {% if form.shift_start_time.errors %}
+            <p class="text-xs text-red-500 mt-1">{{ form.shift_start_time.errors.0 }}</p>
+            {% endif %}
+          </div>
+          <div>
+            <label class="block text-xs font-semibold text-gray-600 mb-1.5 uppercase tracking-wide">
+              Shift End <span class="text-red-400">*</span>
+            </label>
+            {{ form.shift_end_time }}
+            {% if form.shift_end_time.errors %}
+            <p class="text-xs text-red-500 mt-1">{{ form.shift_end_time.errors.0 }}</p>
+            {% endif %}
+          </div>
+        </div>
+
+      </div>
+
+      {# Buttons #}
+      <div class="flex items-center gap-3 mt-6 pt-5 border-t border-gray-100">
+        <button type="submit"
+                class="inline-flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white
+                       text-sm font-semibold px-5 py-2.5 rounded-lg transition">
+          <i class="fas fa-arrow-right text-xs"></i>
+          Save &amp; Add Hourly Targets
+        </button>
+        <a href="{% url 'planning:hourly_plan_board' %}"
+           class="text-sm text-gray-500 hover:text-gray-800 px-4 py-2.5 rounded-lg
+                  border border-gray-200 hover:border-gray-300 transition">
+          Cancel
+        </a>
+      </div>
+    </form>
+  </div>
+
+</div>
+
+{# ── Dynamic Subprocess filter by Work Center ── #}
+<script>
+(function () {
+  const wcSelect = document.getElementById("id_work_center");
+  const spSelect = document.getElementById("id_subprocess");
+  const apiUrl   = "{% url 'planning:subprocess_by_workcenter' %}";
+
+  function loadSubprocesses(wcId, selectValue) {
+    if (!wcId) {
+      spSelect.innerHTML = '<option value="">---------</option>';
+      spSelect.disabled  = true;
+      return;
+    }
+    spSelect.disabled  = true;
+    spSelect.innerHTML = '<option value="">Loading…</option>';
+
+    fetch(`${apiUrl}?work_center_id=${wcId}`, {
+      headers: { "X-Requested-With": "XMLHttpRequest" }
+    })
+      .then(r => r.json())
+      .then(data => {
+        spSelect.innerHTML = '<option value="">---------</option>';
+        if (data.subprocesses.length === 0) {
+          spSelect.innerHTML = '<option value="">No subprocesses found</option>';
+          spSelect.disabled  = true;
+          return;
+        }
+        data.subprocesses.forEach(sp => {
+          const opt       = document.createElement("option");
+          opt.value       = sp.id;
+          opt.textContent = sp.name;
+          if (String(sp.id) === String(selectValue)) opt.selected = true;
+          spSelect.appendChild(opt);
+        });
+        spSelect.disabled = false;
+      })
+      .catch(() => {
+        spSelect.innerHTML = '<option value="">Error loading</option>';
+        spSelect.disabled  = true;
+      });
+  }
+
+  wcSelect.addEventListener("change", function () {
+    loadSubprocesses(this.value, null);
+  });
+
+  if (wcSelect.value) {
+    loadSubprocesses(wcSelect.value, "");
+  } else {
+    spSelect.innerHTML = '<option value="">Select a Work Center first</option>';
+    spSelect.disabled  = true;
+  }
+})();
+</script>
+{% endblock %}

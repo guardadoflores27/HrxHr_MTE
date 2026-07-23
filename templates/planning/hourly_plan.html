@@ -1,0 +1,2122 @@
+{# templates/planning/hourly_plan.html #}
+{# ─────────────────────────────────────────────────────────────────────────── #}
+{# hrxhr_project/templates/planning/hourly_plan.html             #}
+{# ─────────────────────────────────────────────────────────────────────────── #}
+{% extends "base.html" %}
+
+{% block title %}Hourly Plan — {{ plan.work_center.name }}{% endblock %}
+
+{% block page_title %}
+  Hourly Plan —
+  <span class="text-blue-600 mono text-sm font-normal">
+    {{ plan.work_center.name }} · {{ plan.subprocess.name }} · {{ plan.date }}
+  </span>
+{% endblock %}
+
+{% block header_actions %}{% endblock %}
+
+{% block extra_head %}
+<style>
+.slot-card {
+  background:#fff; border:2px solid #e5e7eb; border-radius:14px;
+  transition:border-color .15s, box-shadow .15s;
+}
+.slot-card.drag-over {
+  border-color:#3b82f6;
+  box-shadow:0 0 0 3px rgba(59,130,246,.15);
+  background:#eff6ff;
+}
+.slot-partial { border-style:dashed; }
+.slot-overtime { border-color:#fbbf24; background:#fffbeb; }
+
+.time-block {
+  cursor:grab; user-select:none; border-radius:10px;
+  padding:9px 12px; font-size:.75rem; font-weight:600;
+  display:flex; align-items:center; gap:8px; border:1.5px solid;
+  transition:box-shadow .15s, opacity .15s;
+}
+.time-block:hover  { box-shadow:0 3px 10px rgba(0,0,0,.12); }
+.time-block:active { cursor:grabbing; opacity:.75; }
+
+.block-pill {
+  display:inline-flex; align-items:center; gap:4px;
+  font-size:.68rem; font-weight:600; padding:3px 8px;
+  border-radius:999px; border:1px solid; cursor:pointer;
+  transition:opacity .15s;
+}
+.block-pill:hover { opacity:.7; }
+
+.model-dropdown {
+  position:absolute; top:100%; left:0; right:0; z-index:100;
+  background:#fff; border:1.5px solid #d1d5db; border-radius:10px;
+  box-shadow:0 8px 24px rgba(0,0,0,.1);
+  max-height:180px; overflow-y:auto; margin-top:2px;
+}
+.model-opt { padding:8px 12px; font-size:.8rem; cursor:pointer; transition:background .1s; }
+.model-opt:hover { background:#eff6ff; }
+.model-opt.no-result { color:#9ca3af; font-style:italic; cursor:default; }
+</style>
+{% endblock %}
+
+{% block content %}
+
+{# ── Plan summary bar ─────────────────────────────────────────────────────── #}
+<div class="grid grid-cols-2 sm:grid-cols-5 gap-3 mb-5">
+
+  <div class="bg-white rounded-xl border border-gray-200 px-4 py-3">
+    <p class="text-xs text-gray-400 mb-0.5">Work Center</p>
+    <p class="text-sm font-semibold text-gray-800">{{ plan.work_center.name }}</p>
+  </div>
+
+  <div class="bg-white rounded-xl border border-gray-200 px-4 py-3">
+    <p class="text-xs text-gray-400 mb-0.5">Subprocess</p>
+    <p class="text-sm font-semibold text-gray-800">{{ plan.subprocess.name }}</p>
+  </div>
+
+  <div class="bg-white rounded-xl border border-gray-200 px-4 py-3">
+    <p class="text-xs text-gray-400 mb-0.5">Shift</p>
+    <p class="text-sm font-semibold text-gray-800">{{ plan.shift.name|default:"—" }}</p>
+    {% if plan.shift %}
+    <p class="text-xs text-gray-400 mono">
+      {{ plan.shift.start_time|time:"g:i A" }} – {{ plan.shift.end_time|time:"g:i A" }}
+    </p>
+    {% endif %}
+  </div>
+
+  <div class="bg-white rounded-xl border border-gray-200 px-4 py-3 relative group">
+    <p class="text-xs text-gray-400 mb-0.5">Headcount</p>
+    <div class="flex items-center gap-2">
+      <p class="text-sm font-bold mono text-gray-800" id="hc-display">{{ plan.headcount }}</p>
+      {% if can_hc %}
+      <button onclick="openHcModal()"
+              class="opacity-0 group-hover:opacity-100 text-blue-500 hover:text-blue-700
+                     text-xs p-1 rounded hover:bg-blue-50 transition">
+        <i class="fas fa-pen"></i>
+      </button>
+      {% endif %}
+    </div>
+    {% if hc_history %}
+    <p class="text-[10px] text-gray-300 mt-0.5">
+      Last edited {{ hc_history.0.modified_at|timesince }} ago
+    </p>
+    {% endif %}
+  </div>
+
+  <div class="bg-blue-50 border border-blue-100 rounded-xl px-4 py-3">
+    <p class="text-xs text-blue-400 mb-0.5">Total Planned</p>
+    <p class="text-sm font-bold mono text-blue-700" id="total-planned-display">
+      {{ total_planned }} pcs
+    </p>
+  </div>
+
+</div>
+
+{# ── Main layout ──────────────────────────────────────────────────────────── #}
+<div class="flex gap-5 items-start">
+
+  {# ══ LEFT: palette + overtime ══ #}
+  <div class="w-56 flex-shrink-0 sticky top-4 space-y-4">
+
+    {% if can_blocks %}
+    <div class="bg-white rounded-xl border border-gray-200 shadow-sm p-4">
+      <p class="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">
+        <i class="fas fa-grip-dots-vertical mr-1"></i>Time Blocks
+      </p>
+      <p class="text-[10px] text-gray-400 mb-3">Drag onto any hour slot</p>
+      <div class="space-y-2">
+
+        <div class="time-block bg-orange-50 text-orange-700 border-orange-200"
+             draggable="true"
+             data-id="lunch" data-label="Lunch Break"
+             data-icon="fa-utensils" data-color="orange" data-minutes="30">
+          <i class="fas fa-utensils w-4 text-center flex-shrink-0"></i>
+          <div><div>Lunch Break</div><div class="text-[10px] font-normal opacity-70">30 min (adjustable)</div></div>
+        </div>
+
+        <div class="time-block bg-blue-50 text-blue-700 border-blue-200"
+             draggable="true"
+             data-id="preop" data-label="Pre-Op Preparation"
+             data-icon="fa-wrench" data-color="blue" data-minutes="15">
+          <i class="fas fa-wrench w-4 text-center flex-shrink-0"></i>
+          <div><div>Pre-Op Preparation</div><div class="text-[10px] font-normal opacity-70">15 min (adjustable)</div></div>
+        </div>
+
+        <div class="time-block bg-green-50 text-green-700 border-green-200"
+             draggable="true"
+             data-id="workfin" data-label="Work Finalization"
+             data-icon="fa-flag-checkered" data-color="green" data-minutes="10">
+          <i class="fas fa-flag-checkered w-4 text-center flex-shrink-0"></i>
+          <div><div>Work Finalization</div><div class="text-[10px] font-normal opacity-70">10 min (adjustable)</div></div>
+        </div>
+
+        <div class="time-block bg-violet-50 text-violet-700 border-violet-200"
+             draggable="true"
+             data-id="chair" data-label="Chair Time"
+             data-icon="fa-chair" data-color="violet" data-minutes="5">
+          <i class="fas fa-chair w-4 text-center flex-shrink-0"></i>
+          <div><div>Chair Time</div><div class="text-[10px] font-normal opacity-70">5 min (adjustable)</div></div>
+        </div>
+
+        <div class="time-block bg-gray-100 text-gray-700 border-gray-300"
+             draggable="true"
+             data-id="extra" data-label="Extra Reason"
+             data-icon="fa-pen" data-color="gray" data-minutes="0">
+          <i class="fas fa-pen w-4 text-center flex-shrink-0"></i>
+          <div><div>Extra Reason</div><div class="text-[10px] font-normal opacity-70">Custom text</div></div>
+        </div>
+
+      </div>
+    </div>
+    {% endif %}
+
+    {% if can_write %}
+    <div class="bg-white rounded-xl border border-amber-200 shadow-sm p-4">
+      <p class="text-xs font-semibold text-amber-700 uppercase tracking-wide mb-3">
+        <i class="fas fa-clock mr-1"></i>Add Overtime Hours
+      </p>
+      <div class="space-y-2">
+
+        <div>
+          <label class="block text-[10px] font-semibold text-gray-500 mb-1 uppercase tracking-wide">
+            Start Time <span class="text-red-400">*</span>
+          </label>
+          <input type="time" id="ot-start"
+                 class="w-full rounded-lg border border-gray-300 px-2.5 py-1.5 text-xs
+                        focus:border-amber-400 focus:outline-none">
+        </div>
+
+        <div>
+          <label class="block text-[10px] font-semibold text-gray-500 mb-1 uppercase tracking-wide">
+            End Time <span class="text-red-400">*</span>
+          </label>
+          <input type="time" id="ot-end"
+                 class="w-full rounded-lg border border-gray-300 px-2.5 py-1.5 text-xs
+                        focus:border-amber-400 focus:outline-none">
+        </div>
+
+        <p class="text-[10px] text-gray-400">
+          One slot per hour will be generated. Fill in model, quantity and headcount for each.
+        </p>
+
+        <button onclick="generateOvertimeSlots()"
+                class="w-full bg-amber-500 hover:bg-amber-600 text-white text-xs
+                       font-semibold py-2 rounded-lg transition">
+          <i class="fas fa-calendar-plus mr-1"></i>Generate Overtime Slots
+        </button>
+
+        <p id="ot-error" class="hidden text-[10px] text-red-500 font-semibold"></p>
+      </div>
+    </div>
+    {% endif %}
+
+  </div>
+
+  {# ══ RIGHT: Timeline ══ #}
+  <div class="flex-1 min-w-0 space-y-3" id="timeline">
+
+    {% if not plan.shift %}
+    <div class="slot-card p-8 text-center text-gray-400">
+      <i class="fas fa-clock text-3xl mb-3 block text-gray-200"></i>
+      <p class="text-sm font-medium">This plan has no shift assigned.</p>
+      <a href="{% url 'planning:daily_plan_update' plan.id %}"
+         class="text-xs text-blue-500 hover:underline mt-2 inline-block">Edit plan →</a>
+    </div>
+
+    {% else %}
+
+    {% for slot in time_slots %}
+    <div class="slot-card p-4 {% if slot.is_partial %}slot-partial{% endif %}"
+         id="slot-{{ slot.start|cut:':' }}"
+         data-slot="{{ slot.start }}"
+         data-slot-min="{{ slot.minutes }}"
+         ondragover="event.preventDefault(); this.classList.add('drag-over')"
+         ondragleave="this.classList.remove('drag-over')"
+         ondrop="handleDrop(event, this)">
+
+      {# Slot header #}
+      <div class="flex items-center justify-between mb-3 flex-wrap gap-2">
+        <div class="flex items-center gap-2">
+          <span class="mono text-sm font-bold text-gray-800">{{ slot.label_12h }}</span>
+          {% if slot.is_partial %}
+          <span class="text-[10px] bg-gray-100 text-gray-500 font-semibold px-2 py-0.5 rounded-full">
+            {{ slot.minutes }} min
+          </span>
+          {% endif %}
+        </div>
+        <div class="flex items-center gap-2 flex-wrap">
+          <div class="flex flex-wrap gap-1" id="block-pills-{{ slot.start|cut:':' }}">
+            {% for b in slot.blocks %}
+            <span class="block-pill
+                {% if b.block_type == 'lunch' %}bg-orange-100 text-orange-700 border-orange-200
+                {% elif b.block_type == 'preop' %}bg-blue-100 text-blue-700 border-blue-200
+                {% elif b.block_type == 'workfin' %}bg-green-100 text-green-700 border-green-200
+                {% elif b.block_type == 'chair' %}bg-violet-100 text-violet-700 border-violet-200
+                {% else %}bg-gray-100 text-gray-700 border-gray-300{% endif %}"
+                  data-block-id="{{ b.id }}"
+                  data-minutes="{{ b.minutes }}"
+                  data-block-type="{{ b.block_type }}"
+                  data-reason="{{ b.reason|escapejs }}"
+                  data-slot="{{ slot.start }}"
+                  onclick="openBlockEditModal({{ b.id }}, '{{ b.label|escapejs }}', {{ b.minutes }}, '{{ b.block_type }}', '{{ b.reason|escapejs }}', '{{ slot.start }}')"
+                  title="Click to edit or remove">
+              <i class="fas fa-pen text-[9px] opacity-50 mr-0.5"></i>
+              {{ b.label }} · {{ b.minutes }}m
+            </span>
+            {% endfor %}
+          </div>
+          <span class="text-[10px] font-medium mono
+                       {% if slot.eff_min < slot.minutes %}text-red-500{% else %}text-gray-400{% endif %}"
+                id="eff-{{ slot.start|cut:':' }}">
+            {{ slot.eff_min }} min effective
+          </span>
+        </div>
+      </div>
+
+      {# Existing rows — a slot can now hold one or several models #}
+      <div class="space-y-1.5 mb-3" id="rows-{{ slot.start|cut:':' }}">
+        {% for hp in slot.rows %}
+        <div class="flex items-center gap-3 bg-gray-50 rounded-lg px-3 py-2.5 group border border-gray-100"
+             id="hp-row-{{ hp.id }}">
+          <span class="flex-1 text-xs font-semibold text-gray-700 row-model-name">{{ hp.model.name }}</span>
+          <span class="mono text-sm font-bold text-gray-800 row-qty">{{ hp.planned_quantity }}</span>
+          <span class="text-xs text-gray-400">pcs</span>
+          <span class="text-[10px] text-gray-400 ml-1 row-hc">HC: {{ hp.effective_headcount }}</span>
+
+          {% if can_write %}
+          {# Any hour can be edited or deleted; deletion is blocked server-side
+             when the hour already holds captured execution. #}
+          <button type="button"
+                  onclick="openEditModal({{ hp.id }}, '{{ hp.model.name }}', {{ hp.model.id }}, {{ hp.planned_quantity }}, {{ hp.effective_headcount }}, '{{ hp.comments|escapejs }}')"
+                  class="text-blue-400 hover:text-blue-600
+                         text-xs p-1.5 rounded hover:bg-blue-50 transition"
+                  title="Edit this row">
+            <i class="fas fa-pen-to-square"></i>
+          </button>
+          <button type="button"
+                  onclick="deleteRow({{ hp.id }}, this, '{{ hp.hour|time:"g:i A" }}', '{{ hp.model.name|escapejs }}')"
+                  class="text-red-400 hover:text-red-600
+                         text-xs p-1.5 rounded hover:bg-red-50 transition"
+                  title="Delete this hour">
+            <i class="fas fa-trash"></i>
+          </button>
+          {% endif %}
+        </div>
+
+        {% empty %}
+        <div class="text-[11px] text-gray-300 italic px-1" id="empty-{{ slot.start|cut:':' }}">
+          <i class="fas fa-minus mr-1"></i>Non-working hour — add a model below
+        </div>
+        {% endfor %}
+      </div>
+
+      {# Informational total — only meaningful once 2+ models share the hour #}
+      <div class="{% if slot.rows|length < 2 %}hidden{% endif %} mb-2 flex items-center justify-between
+                  bg-blue-50 border border-blue-100 rounded-lg px-3 py-1.5"
+           id="slot-total-{{ slot.start|cut:':' }}">
+        <span class="text-[10px] font-semibold text-blue-600 uppercase tracking-wide">
+          <span class="slot-model-count">{{ slot.rows|length }}</span> models in this hour
+        </span>
+        <span class="mono text-xs font-bold text-blue-700">
+          <span class="slot-total-qty">{{ slot.total_planned }}</span> pcs total
+        </span>
+      </div>
+
+      {# Non-productive hour badge — shown when effective time = 0 #}
+      <div id="non-prod-{{ slot.start|cut:':' }}"
+           class="hidden mb-2 flex items-center gap-2 bg-gray-100 border border-gray-200
+                  rounded-lg px-3 py-2 text-xs text-gray-500 font-medium">
+        <i class="fas fa-pause-circle text-gray-400"></i>
+        Non-productive hour — all time is occupied by blocks.
+        Planned quantity set to 0.
+      </div>
+
+      {# Add row form — always available; lets the user stack several models in the same hour #}
+      {% if can_write %}
+      <div class="border-t border-gray-100 pt-3">
+        {% if slot.rows %}
+        <p class="text-[10px] text-gray-400 font-semibold mb-2 uppercase tracking-wide">
+          <i class="fas fa-layer-group mr-1"></i>Add another model to this hour
+        </p>
+        {% endif %}
+        <div class="flex gap-2 items-end flex-wrap">
+
+          <div class="flex-1 min-w-36 relative">
+            <label class="block text-[10px] font-semibold text-gray-400 mb-1 uppercase tracking-wide">
+              Model
+            </label>
+            <input type="text"
+                   class="model-search w-full rounded-lg border border-gray-200 px-2.5 py-1.5
+                          text-xs focus:border-blue-400 focus:ring-1 focus:ring-blue-400 focus:outline-none"
+                   placeholder="Search model…" autocomplete="off"
+                   data-slot="{{ slot.start }}">
+            <input type="hidden" class="model-id-input">
+            <div class="model-dropdown hidden"></div>
+          </div>
+
+          <div class="w-20">
+            <label class="block text-[10px] font-semibold text-gray-400 mb-1 uppercase tracking-wide">
+              Qty
+            </label>
+            <input type="number" min="0" placeholder="0"
+                   class="qty-input w-full rounded-lg border border-gray-200 px-2 py-1.5
+                          text-xs text-right focus:border-blue-400 focus:outline-none"
+                   data-slot="{{ slot.start }}"
+                   data-slot-min="{{ slot.minutes }}">
+          </div>
+
+          <div class="w-14">
+            <label class="block text-[10px] font-semibold text-gray-400 mb-1 uppercase tracking-wide">
+              HC
+            </label>
+            <input type="number" min="1" value="{{ plan.headcount }}"
+                   class="hc-input w-full rounded-lg border border-gray-200 px-2 py-1.5
+                          text-xs text-center focus:border-blue-400 focus:outline-none"
+                   data-slot="{{ slot.start }}">
+          </div>
+
+          <button type="button"
+                  class="add-row-btn bg-blue-600 hover:bg-blue-700 text-white text-xs
+                         font-semibold px-3 py-1.5 rounded-lg transition flex-shrink-0"
+                  data-slot="{{ slot.start }}" data-overtime="false">
+            <i class="fas fa-plus"></i>
+          </button>
+
+        </div>
+
+        <div class="mt-1.5">
+          <button type="button"
+                  class="toggle-comment text-[10px] text-gray-400 hover:text-gray-600 transition">
+            <i class="fas fa-comment mr-1"></i>+ Comment
+          </button>
+          <textarea placeholder="Optional comment for this hour…" rows="2"
+                    class="comment-input hidden mt-1 w-full rounded-lg border border-gray-200
+                           px-2.5 py-1.5 text-xs focus:border-blue-400 focus:outline-none
+                           resize-none" data-slot="{{ slot.start }}"></textarea>
+        </div>
+
+        <p class="hidden text-[10px] text-red-500 font-semibold mt-1"
+           id="err-{{ slot.start|cut:':' }}"></p>
+      </div>
+      {% endif %}
+
+    </div>
+    {% endfor %}
+
+    {# Overtime hours — each hour is its own slot-card, same shape as a #}
+    {# regular hour, so Time Blocks can be dropped on it and "effective #}
+    {# minutes" is computed the same way for both. #}
+    {% if overtime_slots %}
+    <div class="space-y-3" id="overtime-list">
+      {% for slot in overtime_slots %}
+      <div class="slot-card slot-overtime p-4"
+           id="ot-slot-{{ slot.start|cut:':' }}"
+           data-slot="{{ slot.start }}"
+           data-slot-min="{{ slot.minutes }}"
+           data-overtime-slot="true"
+           ondragover="event.preventDefault(); this.classList.add('drag-over')"
+           ondragleave="this.classList.remove('drag-over')"
+           ondrop="handleDrop(event, this)">
+
+        {# Slot header — same layout as regular hours, amber-tinted #}
+        <div class="flex items-center justify-between mb-3 flex-wrap gap-2">
+          <div class="flex items-center gap-2">
+            <span class="mono text-sm font-bold text-amber-700">{{ slot.label_12h }}</span>
+            <span class="text-[10px] font-semibold bg-amber-100 text-amber-700
+                         border border-amber-200 px-2 py-0.5 rounded-full">OT</span>
+          </div>
+          <div class="flex items-center gap-2 flex-wrap">
+            <div class="flex flex-wrap gap-1" id="block-pills-{{ slot.start|cut:':' }}">
+              {% for b in slot.blocks %}
+              <span class="block-pill
+                  {% if b.block_type == 'lunch' %}bg-orange-100 text-orange-700 border-orange-200
+                  {% elif b.block_type == 'preop' %}bg-blue-100 text-blue-700 border-blue-200
+                  {% elif b.block_type == 'workfin' %}bg-green-100 text-green-700 border-green-200
+                  {% elif b.block_type == 'chair' %}bg-violet-100 text-violet-700 border-violet-200
+                  {% else %}bg-gray-100 text-gray-700 border-gray-300{% endif %}"
+                    data-block-id="{{ b.id }}"
+                    data-minutes="{{ b.minutes }}"
+                    data-block-type="{{ b.block_type }}"
+                    data-reason="{{ b.reason|escapejs }}"
+                    data-slot="{{ slot.start }}"
+                    onclick="openBlockEditModal({{ b.id }}, '{{ b.label|escapejs }}', {{ b.minutes }}, '{{ b.block_type }}', '{{ b.reason|escapejs }}', '{{ slot.start }}')"
+                    title="Click to edit or remove">
+                <i class="fas fa-pen text-[9px] opacity-50 mr-0.5"></i>
+                {{ b.label }} · {{ b.minutes }}m
+              </span>
+              {% endfor %}
+            </div>
+            <span class="text-[10px] font-medium mono
+                         {% if slot.eff_min < slot.minutes %}text-red-500{% else %}text-gray-400{% endif %}"
+                  id="eff-{{ slot.start|cut:':' }}">
+              {{ slot.eff_min }} min effective
+            </span>
+          </div>
+        </div>
+
+        {# Models for this overtime hour #}
+        <div class="space-y-1.5 mb-3" id="rows-{{ slot.start|cut:':' }}">
+          {% for hp in slot.rows %}
+          <div class="flex items-center gap-3 bg-amber-50 rounded-lg px-3 py-2.5 group border border-amber-100"
+               id="hp-row-{{ hp.id }}"
+               data-ot-hour="{{ slot.start }}">
+            <span class="flex-1 text-xs font-semibold text-gray-700 row-model-name">{{ hp.model.name }}</span>
+            <span class="mono text-sm font-bold text-amber-700 row-qty">{{ hp.planned_quantity }}</span>
+            <span class="text-xs text-gray-400">pcs</span>
+            <span class="text-[10px] text-gray-400 ml-1 row-hc">HC: {{ hp.effective_headcount }}</span>
+            {% if can_write %}
+            <button type="button"
+                    onclick="openEditModal({{ hp.id }}, '{{ hp.model.name }}', {{ hp.model.id }}, {{ hp.planned_quantity }}, {{ hp.effective_headcount }}, '{{ hp.comments|escapejs }}')"
+                    class="text-blue-400 hover:text-blue-600
+                           text-xs p-1.5 rounded hover:bg-blue-50 transition"
+                    title="Edit this overtime row">
+              <i class="fas fa-pen-to-square"></i>
+            </button>
+            {# Overtime rows CAN be deleted #}
+            <button type="button"
+                    onclick="deleteRow({{ hp.id }}, this, '{{ hp.hour|time:"g:i A" }}', '{{ hp.model.name|escapejs }}')"
+                    class="text-red-400 hover:text-red-600
+                           text-xs p-1.5 rounded hover:bg-red-50 transition"
+                    title="Delete this hour">
+              <i class="fas fa-trash"></i>
+            </button>
+            {% endif %}
+          </div>
+          {% endfor %}
+        </div>
+
+        {# Informational total — only meaningful once 2+ models share the OT hour #}
+        <div class="{% if slot.rows|length < 2 %}hidden{% endif %} mb-2 flex items-center justify-between
+                    bg-amber-100 border border-amber-200 rounded-lg px-3 py-1.5"
+             id="slot-total-{{ slot.start|cut:':' }}">
+          <span class="text-[10px] font-semibold text-amber-700 uppercase tracking-wide">
+            <span class="slot-model-count">{{ slot.rows|length }}</span> models in this hour
+          </span>
+          <span class="mono text-xs font-bold text-amber-700">
+            <span class="slot-total-qty">{{ slot.total_planned }}</span> pcs total
+          </span>
+        </div>
+
+        {# Non-productive hour badge — shown when effective time = 0 #}
+        <div id="non-prod-{{ slot.start|cut:':' }}"
+             class="{% if slot.eff_min > 0 %}hidden{% endif %} mb-2 flex items-center gap-2 bg-gray-100 border border-gray-200
+                    rounded-lg px-3 py-2 text-xs text-gray-500 font-medium">
+          <i class="fas fa-pause-circle text-gray-400"></i>
+          Non-productive hour — all time is occupied by blocks.
+          New rows added to this hour will start at 0.
+        </div>
+
+        {# Add another model to this OT hour — always available, drop the #}
+        {# Time Block onto the card above to track effective minutes #}
+        {% if can_write %}
+        <div class="border-t border-amber-100 pt-3">
+          {% if slot.rows %}
+          <p class="text-[10px] text-amber-500 font-semibold mb-2 uppercase tracking-wide">
+            <i class="fas fa-layer-group mr-1"></i>Add another model to this overtime hour
+          </p>
+          {% endif %}
+          <div class="flex gap-2 items-end flex-wrap">
+            <div class="flex-1 min-w-36 relative">
+              <label class="block text-[10px] font-semibold text-gray-400 mb-1 uppercase tracking-wide">
+                Model
+              </label>
+              <input type="text"
+                     class="model-search w-full rounded-lg border border-gray-200 px-2.5 py-1.5
+                            text-xs focus:border-amber-400 focus:ring-1 focus:ring-amber-400 focus:outline-none"
+                     placeholder="Search model…" autocomplete="off"
+                     data-slot="{{ slot.start }}">
+              <input type="hidden" class="model-id-input">
+              <div class="model-dropdown hidden"></div>
+            </div>
+            <div class="w-20">
+              <label class="block text-[10px] font-semibold text-gray-400 mb-1 uppercase tracking-wide">
+                Qty
+              </label>
+              <input type="number" min="0" placeholder="0"
+                     class="qty-input w-full rounded-lg border border-gray-200 px-2 py-1.5
+                            text-xs text-right focus:border-amber-400 focus:outline-none"
+                     data-slot="{{ slot.start }}"
+                     data-slot-min="{{ slot.minutes }}">
+            </div>
+            <div class="w-14">
+              <label class="block text-[10px] font-semibold text-gray-400 mb-1 uppercase tracking-wide">
+                HC
+              </label>
+              <input type="number" min="1" value="{{ plan.headcount }}"
+                     class="hc-input w-full rounded-lg border border-gray-200 px-2 py-1.5
+                            text-xs text-center focus:border-amber-400 focus:outline-none"
+                     data-slot="{{ slot.start }}">
+            </div>
+            <button type="button"
+                    class="add-row-btn bg-amber-500 hover:bg-amber-600 text-white text-xs
+                           font-semibold px-3 py-1.5 rounded-lg transition flex-shrink-0"
+                    data-slot="{{ slot.start }}" data-overtime="true">
+              <i class="fas fa-plus"></i>
+            </button>
+          </div>
+          <p class="hidden text-[10px] text-red-500 font-semibold mt-1"
+             id="err-{{ slot.start|cut:':' }}"></p>
+        </div>
+        {% endif %}
+
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+
+    {# ── Overtime pending slots (generated dynamically, not yet saved) ── #}
+    <div id="ot-pending-section" class="hidden space-y-3"></div>
+
+    {% if not time_slots and not overtime_slots %}
+    <div class="slot-card p-10 text-center text-gray-400">
+      <i class="fas fa-table-cells text-3xl mb-3 block text-gray-200"></i>
+      <p class="text-sm font-medium">No rows planned yet.</p>
+    </div>
+    {% endif %}
+
+    {% endif %}
+
+  </div>
+</div>
+
+{# ══ EDIT ROW MODAL ══ #}
+{% if can_write %}
+{# ── Delete hour confirmation ─────────────────────────────────────────────── #}
+<div id="delete-row-modal"
+     class="hidden fixed inset-0 z-50 items-center justify-center bg-black/40 backdrop-blur-sm"
+     role="dialog" aria-modal="true" aria-labelledby="delete-row-title">
+  <div class="bg-white rounded-2xl shadow-2xl border border-gray-200 w-96 p-6">
+    <div class="flex items-start gap-3 mb-3">
+      <div class="w-9 h-9 rounded-full bg-red-50 flex items-center justify-center flex-shrink-0">
+        <i class="fas fa-triangle-exclamation text-red-500 text-sm"></i>
+      </div>
+      <div>
+        <h3 id="delete-row-title" class="text-sm font-bold text-gray-800">Delete this hour?</h3>
+        <p class="text-xs text-gray-500 mt-0.5">This action cannot be undone.</p>
+      </div>
+    </div>
+
+    <div class="rounded-lg bg-gray-50 border border-gray-200 px-3 py-2 mb-3">
+      <p id="delete-row-detail" class="text-xs font-semibold text-gray-700 mono">—</p>
+    </div>
+
+    <div id="delete-row-warning"
+         class="hidden rounded-lg bg-amber-50 border border-amber-200 text-amber-800 text-xs
+                leading-snug px-3 py-2 mb-3"></div>
+
+    <div id="delete-row-error"
+         class="hidden rounded-lg bg-red-50 border border-red-200 text-red-700 text-xs px-3 py-2 mb-3"></div>
+
+    <div class="flex justify-end gap-2">
+      <button type="button" onclick="closeDeleteRowModal()"
+              class="text-xs font-semibold text-gray-600 hover:text-gray-800 border border-gray-200
+                     hover:border-gray-300 px-4 py-2 rounded-lg transition">
+        Cancel
+      </button>
+      <button type="button" id="delete-row-confirm" onclick="confirmDeleteRow()"
+              class="text-xs font-semibold bg-red-600 hover:bg-red-700 text-white px-4 py-2
+                     rounded-lg transition">
+        Delete hour
+      </button>
+    </div>
+  </div>
+</div>
+
+<div id="edit-modal"
+     class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
+  <div class="bg-white rounded-2xl shadow-2xl border border-gray-200 w-96 p-6">
+    <h3 class="text-sm font-bold text-gray-800 mb-4">Edit Hourly Row</h3>
+    <input type="hidden" id="edit-hp-id">
+    <div class="space-y-3">
+      <div>
+        <label class="block text-xs font-semibold text-gray-600 mb-1">Model</label>
+        <div class="relative">
+          <input type="text" id="edit-model-search" placeholder="Search model…" autocomplete="off"
+                 class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm
+                        focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none">
+          <div id="edit-model-dropdown" class="model-dropdown hidden"></div>
+        </div>
+        <input type="hidden" id="edit-model-id">
+      </div>
+      <div class="grid grid-cols-2 gap-3">
+        <div>
+          <label class="block text-xs font-semibold text-gray-600 mb-1">Quantity</label>
+          <input type="number" id="edit-qty" min="0"
+                 class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-right
+                        focus:border-blue-500 focus:ring-1 focus:outline-none">
+        </div>
+        <div>
+          <label class="block text-xs font-semibold text-gray-600 mb-1">Headcount Override</label>
+          <input type="number" id="edit-hc" min="1"
+                 class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-center
+                        focus:border-blue-500 focus:ring-1 focus:outline-none">
+        </div>
+      </div>
+      <div>
+        <label class="block text-xs font-semibold text-gray-600 mb-1">Comments</label>
+        <textarea id="edit-comments" rows="2"
+                  placeholder="Optional comments…"
+                  class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm resize-none
+                         focus:border-blue-500 focus:ring-1 focus:outline-none"></textarea>
+      </div>
+      <p id="edit-error" class="hidden text-xs text-red-500 font-semibold"></p>
+    </div>
+    <div class="flex gap-2 mt-5">
+      <button onclick="saveEdit()"
+              class="flex-1 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold
+                     py-2.5 rounded-xl transition">
+        Save Changes
+      </button>
+      <button onclick="closeEditModal()"
+              class="flex-1 border border-gray-200 text-gray-500 hover:bg-gray-50 text-sm
+                     font-semibold py-2.5 rounded-xl transition">
+        Cancel
+      </button>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+{# ══ HEADCOUNT MODAL ══ #}
+{% if can_hc %}
+<div id="hc-modal"
+     class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
+  <div class="bg-white rounded-2xl shadow-2xl border border-gray-200 w-96 p-6">
+    <h3 class="text-sm font-bold text-gray-800 mb-1">Edit Headcount</h3>
+    <p class="text-xs text-gray-500 mb-4">
+      Current: <strong id="hc-current">{{ plan.headcount }}</strong>
+    </p>
+    <div class="space-y-3">
+      <div>
+        <label class="block text-xs font-semibold text-gray-600 mb-1">New Headcount</label>
+        <input type="number" id="hc-new-val" min="1" value="{{ plan.headcount }}"
+               class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm
+                      focus:border-blue-500 focus:ring-1 focus:outline-none">
+      </div>
+      <div>
+        <label class="block text-xs font-semibold text-gray-600 mb-1">
+          Adjustment Comment <span class="text-red-400">*</span>
+        </label>
+        <textarea id="hc-comment" rows="3"
+                  placeholder="Reason for headcount change (required)…"
+                  class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm resize-none
+                         focus:border-blue-500 focus:ring-1 focus:outline-none"></textarea>
+      </div>
+      {# Hours without a per-hour override always follow the plan. This also
+         clears the manual overrides so the new value truly applies to all. #}
+      <label class="flex items-start gap-2 cursor-pointer bg-blue-50 border border-blue-100
+                    rounded-lg px-3 py-2">
+        <input type="checkbox" id="hc-apply-all" class="mt-0.5">
+        <span class="text-xs text-blue-800 leading-snug">
+          <span class="font-semibold">Apply to every hour</span><br>
+          <span class="text-blue-600">Also resets hours that have their own manual headcount.</span>
+        </span>
+      </label>
+      <p id="hc-error" class="hidden text-xs text-red-500 font-semibold"></p>
+    </div>
+    {% if hc_history %}
+    <div class="mt-4 pt-4 border-t border-gray-100">
+      <p class="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-2">Recent History</p>
+      {% for a in hc_history %}
+      <div class="text-[10px] text-gray-500 flex justify-between mb-1">
+        <span>{{ a.previous_value }} → <strong>{{ a.new_value }}</strong> by {{ a.modified_by.username }}</span>
+        <span class="text-gray-300">{{ a.modified_at|timesince }} ago</span>
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+    <div class="flex gap-2 mt-5">
+      <button onclick="saveHeadcount()"
+              class="flex-1 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold
+                     py-2.5 rounded-xl transition">
+        Save
+      </button>
+      <button onclick="closeHcModal()"
+              class="flex-1 border border-gray-200 text-gray-500 hover:bg-gray-50 text-sm
+                     font-semibold py-2.5 rounded-xl transition">
+        Cancel
+      </button>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+{# ══ BLOCK EDIT MODAL (edit/remove existing placed blocks) ══ #}
+{% if can_blocks %}
+<div id="block-edit-modal"
+     class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
+  <div class="bg-white rounded-2xl shadow-2xl border border-gray-200 w-80 p-6">
+    <h3 class="text-sm font-bold text-gray-800 mb-1" id="bem-title">Edit Block</h3>
+    <p class="text-xs text-gray-400 mb-4">Adjust the duration or remove this time block.</p>
+    <input type="hidden" id="bem-block-id">
+    <input type="hidden" id="bem-slot-time">
+    <div class="space-y-3">
+      <div>
+        <label class="block text-xs font-semibold text-gray-600 mb-1">Duration (minutes)</label>
+        <input type="number" id="bem-minutes" min="0" max="60"
+               class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm
+                      focus:border-blue-500 focus:ring-1 focus:outline-none">
+      </div>
+      <div id="bem-reason-wrap" class="hidden">
+        <label class="block text-xs font-semibold text-gray-600 mb-1">Reason</label>
+        <input type="text" id="bem-reason" placeholder="Describe the reason…"
+               class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm
+                      focus:border-blue-500 focus:ring-1 focus:outline-none">
+      </div>
+      <p id="bem-error" class="hidden text-xs text-red-500 font-semibold"></p>
+    </div>
+    <div class="flex gap-2 mt-5">
+      <button onclick="saveBlockEdit()"
+              class="flex-1 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold
+                     py-2.5 rounded-xl transition">
+        Save Changes
+      </button>
+      <button onclick="deleteCurrentBlock()"
+              class="bg-red-50 hover:bg-red-100 text-red-600 text-sm font-semibold
+                     px-4 py-2.5 rounded-xl border border-red-200 transition"
+              title="Remove this block">
+        <i class="fas fa-trash text-xs"></i>
+      </button>
+      <button onclick="closeBlockEditModal()"
+              class="flex-1 border border-gray-200 text-gray-500 hover:bg-gray-50 text-sm
+                     font-semibold py-2.5 rounded-xl transition">
+        Cancel
+      </button>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+{# ══ BLOCK CONFIG MODAL ══ #}
+<div id="block-modal"
+     class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
+  <div class="bg-white rounded-2xl shadow-2xl border border-gray-200 w-80 p-6">
+    <h3 class="text-sm font-bold text-gray-800 mb-1" id="block-modal-title">Configure Block</h3>
+    <p class="text-xs text-gray-500 mb-4">Set the duration and description for this block.</p>
+    <div class="space-y-3">
+      <div>
+        <label class="block text-xs font-semibold text-gray-600 mb-1">Duration (minutes)</label>
+        <input type="number" id="bm-minutes" min="0" max="60" value="30"
+               class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm
+                      focus:border-blue-500 focus:ring-1 focus:outline-none">
+      </div>
+      <div id="bm-reason-wrap" class="hidden">
+        <label class="block text-xs font-semibold text-gray-600 mb-1">Reason</label>
+        <input type="text" id="bm-reason" placeholder="Describe the reason…"
+               class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm
+                      focus:border-blue-500 focus:ring-1 focus:outline-none">
+      </div>
+    </div>
+    <div class="flex gap-2 mt-5">
+      <button onclick="confirmBlock()"
+              class="flex-1 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold
+                     py-2.5 rounded-xl transition">
+        Confirm
+      </button>
+      <button onclick="cancelBlock()"
+              class="flex-1 border border-gray-200 text-gray-500 hover:bg-gray-50 text-sm
+                     font-semibold py-2.5 rounded-xl transition">
+        Cancel
+      </button>
+    </div>
+  </div>
+</div>
+
+{# ══ MODEL NOT FOUND MODAL ══ #}
+<div id="model-nf-modal"
+     class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
+  <div class="bg-white rounded-2xl shadow-2xl border border-gray-200 w-96 p-6 text-center">
+    <div class="w-12 h-12 rounded-full bg-amber-100 flex items-center justify-center mx-auto mb-4">
+      <i class="fas fa-box-open text-amber-500 text-xl"></i>
+    </div>
+    <h3 class="text-sm font-bold text-gray-800 mb-2">Model Not Found</h3>
+    <p class="text-xs text-gray-500 mb-3">
+      The model you typed does not exist in the database yet.
+    </p>
+
+    {% if can_add_model %}
+    {# Leader / Supervisor / Admin — can go add it #}
+    <div class="rounded-lg bg-blue-50 border border-blue-100 px-4 py-3 mb-5 text-left">
+      <p class="text-xs text-blue-700 font-semibold mb-1">
+        <i class="fas fa-circle-check mr-1"></i>You can add it
+      </p>
+      <p class="text-xs text-blue-600">
+        As a <strong>{{ request.user.profile.get_role_display }}</strong> you have permission
+        to create new models. Click "Add Model" to go to the model catalog and add it,
+        then come back to plan this hour.
+      </p>
+    </div>
+    <div class="flex gap-2">
+      <button onclick="document.getElementById('model-nf-modal').classList.add('hidden')"
+              class="flex-1 border border-gray-200 text-gray-500 text-sm font-semibold
+                     py-2.5 rounded-xl hover:bg-gray-50 transition">
+        Cancel
+      </button>
+      <a href="{% url 'planning:model_list' %}"
+         class="flex-1 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold
+                py-2.5 rounded-xl transition text-center">
+        <i class="fas fa-plus mr-1.5"></i>Add Model
+      </a>
+    </div>
+
+    {% else %}
+    {# Operator — read only, cannot add #}
+    <div class="rounded-lg bg-amber-50 border border-amber-100 px-4 py-3 mb-5 text-left">
+      <p class="text-xs text-amber-700 font-semibold mb-1">
+        <i class="fas fa-lock mr-1"></i>Permission required
+      </p>
+      <p class="text-xs text-amber-600">
+        Only <strong>Leaders</strong>, <strong>Supervisors</strong>, and
+        <strong>Admins</strong> can add new models to the catalog.
+        Please contact your supervisor to have this model added.
+      </p>
+    </div>
+    <button onclick="document.getElementById('model-nf-modal').classList.add('hidden')"
+            class="w-full border border-gray-200 text-gray-600 text-sm font-semibold
+                   py-2.5 rounded-xl hover:bg-gray-50 transition">
+      Close
+    </button>
+    {% endif %}
+
+  </div>
+</div>
+
+{# ══ DUPLICATE MODEL MODAL ══ #}
+<div id="slot-occupied-modal"
+     class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
+  <div class="bg-white rounded-2xl shadow-2xl border border-gray-200 w-80 p-6 text-center">
+    <div class="w-12 h-12 rounded-full bg-amber-100 flex items-center justify-center mx-auto mb-4">
+      <i class="fas fa-lock text-amber-500 text-xl"></i>
+    </div>
+    <h3 class="text-sm font-bold text-gray-800 mb-2">Model Already Added</h3>
+    <p class="text-xs text-gray-500 mb-2" id="slot-occupied-msg">
+      This model is already assigned to this hour.
+    </p>
+    <p class="text-xs text-gray-400 mb-5">
+      A model can't be added twice to the same hour. Click the
+      <i class="fas fa-pen-to-square text-blue-400 mx-0.5"></i> icon on the existing row to edit its quantity instead.
+    </p>
+    <button onclick="document.getElementById('slot-occupied-modal').classList.add('hidden')"
+            class="w-full bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold
+                   py-2.5 rounded-xl transition">
+      Got It
+    </button>
+  </div>
+</div>
+
+{% endblock %}
+
+
+{% block extra_js %}
+<script>
+// ═══════════════════════════════════════════════════════════════════════════
+// CONFIG
+// ═══════════════════════════════════════════════════════════════════════════
+const PLAN_ID          = {{ plan.id }};
+const MODEL_SEARCH_URL = "{% url 'planning:api_model_search' %}";
+const ADD_ROW_URL      = "{% url 'planning:api_add_row' plan.id %}";
+const ADD_BLOCK_URL    = "{% url 'planning:api_add_block' plan.id %}";
+const EDIT_BLOCK_BASE  = "{% url 'planning:api_edit_block' plan.id 0 %}".replace("/0/", "/");
+const REMOVE_BLOCK_BASE= "{% url 'planning:api_remove_block' plan.id 0 %}".replace("/0/", "/");
+const HC_URL           = "{% url 'planning:api_update_headcount' plan.id %}";
+const EDIT_ROW_BASE    = "{% url 'planning:api_edit_row' plan.id 0 %}".replace("/0/", "/");
+const DELETE_ROW_BASE  = "{% url 'planning:hourly_delete' plan.id 0 %}".replace("/0/delete/", "/");
+const CSRF             = "{{ csrf_token }}";
+const CAN_WRITE        = {{ can_write|yesno:"true,false" }};
+const CAN_ADD_MODEL    = {{ can_add_model|yesno:"true,false" }};
+const SHIFT            = {{ shift_json|safe }};
+
+const BLOCK_COLORS = {
+  lunch:   { bg:"bg-orange-100", text:"text-orange-700", border:"border-orange-200" },
+  preop:   { bg:"bg-blue-100",   text:"text-blue-700",   border:"border-blue-200"   },
+  workfin: { bg:"bg-green-100",  text:"text-green-700",  border:"border-green-200"  },
+  chair:   { bg:"bg-violet-100", text:"text-violet-700", border:"border-violet-200" },
+  extra:   { bg:"bg-gray-100",   text:"text-gray-700",   border:"border-gray-300"   },
+};
+
+// ═══════════════════════════════════════════════════════════════════════════
+// UTILITIES
+// ═══════════════════════════════════════════════════════════════════════════
+function slotKey(t) { return t.replace(":", ""); }
+
+function postJSON(url, body) {
+  return fetch(url, {
+    method:  "POST",
+    headers: { "Content-Type": "application/json", "X-CSRFToken": CSRF },
+    body:    JSON.stringify(body),
+  }).then(r => r.json());
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// MODEL SEARCH AUTOCOMPLETE
+// ═══════════════════════════════════════════════════════════════════════════
+function setupModelSearch(inputEl, hiddenEl, dropdownEl) {
+  let timer;
+  inputEl.addEventListener("input", function () {
+    clearTimeout(timer);
+    const q = this.value.trim();
+    hiddenEl.value = "";
+    if (!q) { dropdownEl.classList.add("hidden"); return; }
+    timer = setTimeout(() => {
+      fetch(`${MODEL_SEARCH_URL}?q=${encodeURIComponent(q)}`)
+        .then(r => r.json())
+        .then(data => {
+          dropdownEl.innerHTML = "";
+          if (!data.models.length) {
+            const d = document.createElement("div");
+            d.className   = "model-opt no-result";
+            d.textContent = "No results found";
+            dropdownEl.appendChild(d);
+          } else {
+            data.models.forEach(m => {
+              const d = document.createElement("div");
+              d.className   = "model-opt";
+              d.textContent = m.name;
+              d.addEventListener("mousedown", e => {
+                e.preventDefault();
+                inputEl.value  = m.name;
+                hiddenEl.value = m.id;
+                dropdownEl.classList.add("hidden");
+              });
+              dropdownEl.appendChild(d);
+            });
+          }
+          dropdownEl.classList.remove("hidden");
+        });
+    }, 180);
+  });
+  inputEl.addEventListener("blur", () => setTimeout(() => dropdownEl.classList.add("hidden"), 200));
+}
+
+// Init all slot form searches
+document.querySelectorAll(".slot-card").forEach(card => {
+  const inp  = card.querySelector(".model-search");
+  const hid  = card.querySelector(".model-id-input");
+  const drop = card.querySelector(".model-dropdown");
+  if (inp && hid && drop) setupModelSearch(inp, hid, drop);
+});
+
+// Overtime search
+const otInp  = document.getElementById("ot-model-search");
+const otHid  = document.getElementById("ot-model-id");
+const otDrop = document.getElementById("ot-model-dropdown");
+if (otInp) setupModelSearch(otInp, otHid, otDrop);
+
+// Edit modal search
+const editInp  = document.getElementById("edit-model-search");
+const editHid  = document.getElementById("edit-model-id");
+const editDrop = document.getElementById("edit-model-dropdown");
+if (editInp) setupModelSearch(editInp, editHid, editDrop);
+
+// ═══════════════════════════════════════════════════════════════════════════
+// COMMENT TOGGLE
+// ═══════════════════════════════════════════════════════════════════════════
+document.querySelectorAll(".toggle-comment").forEach(btn => {
+  btn.addEventListener("click", function () {
+    const box = this.nextElementSibling;
+    box.classList.toggle("hidden");
+    if (!box.classList.contains("hidden")) box.focus();
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// ADD ROW
+// ═══════════════════════════════════════════════════════════════════════════
+// Wires a single "+" button (regular-hour or overtime-hour form) to the add
+// row API. Extracted into a named function so it can also be called on
+// buttons created dynamically later (e.g. a brand-new overtime hour card).
+function wireAddRowButton(btn) {
+  if (!btn || btn.dataset.wired === "true") return;
+  btn.dataset.wired = "true";
+
+  btn.addEventListener("click", function () {
+    const slotTime = this.dataset.slot;
+    const isOt     = this.dataset.overtime === "true";
+    const card     = document.getElementById("slot-" + slotKey(slotTime))
+                  || document.getElementById("ot-slot-" + slotKey(slotTime))
+                  || this.closest(".slot-card");
+
+    const modelInp = card.querySelector(".model-search");
+    const modelId  = card.querySelector(".model-id-input")?.value;
+    const qty      = card.querySelector(".qty-input")?.value;
+    const hc       = card.querySelector(".hc-input")?.value;
+    const comment  = card.querySelector(".comment-input")?.value || "";
+    const errEl    = document.getElementById("err-" + slotKey(slotTime));
+
+    if (!modelId) {
+      if (modelInp?.value.trim()) {
+        document.getElementById("model-nf-modal").classList.remove("hidden");
+      } else if (errEl) {
+        errEl.textContent = "Please select a model.";
+        errEl.classList.remove("hidden");
+        setTimeout(() => errEl.classList.add("hidden"), 4000);
+      }
+      return;
+    }
+    if (!qty || parseInt(qty) < 0) {
+      if (errEl) {
+        errEl.textContent = "Please enter a valid quantity.";
+        errEl.classList.remove("hidden");
+        setTimeout(() => errEl.classList.add("hidden"), 4000);
+      }
+      return;
+    }
+
+    btn.disabled  = true;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+
+    postJSON(ADD_ROW_URL, {
+      hour:               slotTime,
+      model_id:           parseInt(modelId),
+      quantity:           parseInt(qty),
+      headcount_override: hc ? parseInt(hc) : null,
+      is_overtime:        isOt,
+      comments:           comment,
+    }).then(data => {
+      btn.disabled  = false;
+      btn.innerHTML = '<i class="fas fa-plus"></i>';
+
+      if (!data.ok) {
+        // Duplicate model in the same hour
+        if (data.error && data.error.includes("already assigned to")) {
+          document.getElementById("slot-occupied-msg").textContent = data.error;
+          document.getElementById("slot-occupied-modal").classList.remove("hidden");
+        } else if (errEl) {
+          errEl.textContent = data.error;
+          errEl.classList.remove("hidden");
+          setTimeout(() => errEl.classList.add("hidden"), 5000);
+        }
+        return;
+      }
+
+      // Append row — with edit button so the user can modify it immediately
+      const rowsEl  = document.getElementById("rows-" + slotKey(slotTime));
+      const emptyEl = document.getElementById("empty-" + slotKey(slotTime));
+      if (emptyEl) emptyEl.remove();
+
+      const div = document.createElement("div");
+      div.id        = "hp-row-" + data.id;
+      div.className = isOt
+        ? "flex items-center gap-3 bg-amber-50 rounded-lg px-3 py-2.5 group border border-amber-100"
+        : "flex items-center gap-3 bg-gray-50 rounded-lg px-3 py-2.5 group border border-gray-100";
+      if (isOt) div.dataset.otHour = slotTime;
+      div.innerHTML = `
+        <span class="flex-1 text-xs font-semibold text-gray-700 row-model-name">${data.model}</span>
+        <span class="mono text-sm font-bold ${isOt ? 'text-amber-700' : 'text-gray-800'} row-qty">${data.qty}</span>
+        <span class="text-xs text-gray-400">pcs</span>
+        <span class="text-[10px] text-gray-400 ml-1 row-hc">HC: ${data.hc}</span>
+        <button type="button"
+                class="text-blue-400 hover:text-blue-600
+                       text-xs p-1.5 rounded hover:bg-blue-50 transition"
+                title="Edit this row"
+                onclick="openEditModal(${data.id}, '${data.model.replace(/'/g,"\\'")}',
+                         ${data.model_id}, ${data.qty}, ${data.hc}, '')">
+          <i class="fas fa-pen-to-square"></i>
+        </button>
+        <button type="button"
+                class="text-red-400 hover:text-red-600
+                       text-xs p-1.5 rounded hover:bg-red-50 transition"
+                title="Delete this hour"
+                onclick="deleteRow(${data.id}, this, '${data.hour_12 || ""}', '${(data.model || "").replace(/'/g, "")}')">
+          <i class="fas fa-trash"></i>
+        </button>
+      `;
+      rowsEl.appendChild(div);
+
+      // Keep the add-model form visible (and relabel it) so the user can
+      // stack another model in the same hour right away. Works the same
+      // way for overtime hours as for regular ones.
+      updateSlotMultiModelUI(slotTime, rowsEl.children.length, data.slot_total);
+
+      // Clear form fields so the next entry starts fresh
+      if (modelInp) modelInp.value = "";
+      card.querySelector(".model-id-input") && (card.querySelector(".model-id-input").value = "");
+      card.querySelector(".qty-input")      && (card.querySelector(".qty-input").value = "");
+      card.querySelector(".comment-input")  && (card.querySelector(".comment-input").value = "");
+
+      updateTotalDisplay(data.qty, true);
+    }).catch(() => {
+      btn.disabled  = false;
+      btn.innerHTML = '<i class="fas fa-plus"></i>';
+      if (errEl) { errEl.textContent = "Network error. Please try again."; errEl.classList.remove("hidden"); }
+    });
+  });
+}
+
+document.querySelectorAll(".add-row-btn").forEach(wireAddRowButton);
+
+// ═══════════════════════════════════════════════════════════════════════════
+// MULTI-MODEL PER HOUR — UI helpers
+// ═══════════════════════════════════════════════════════════════════════════
+
+// Shows/refreshes the "N models · X pcs total" pill above the add-model form,
+// and relabels the form once a slot already has at least one model.
+function updateSlotMultiModelUI(slotTime, modelCount, slotTotal) {
+  const key       = slotKey(slotTime);
+  const totalCard = document.getElementById("slot-total-" + key);
+  if (totalCard) {
+    const countEl = totalCard.querySelector(".slot-model-count");
+    const qtyEl   = totalCard.querySelector(".slot-total-qty");
+    if (countEl) countEl.textContent = modelCount;
+    if (qtyEl && slotTotal !== undefined && slotTotal !== null) qtyEl.textContent = slotTotal;
+    totalCard.classList.toggle("hidden", modelCount < 2);
+  }
+
+  // Regular hours use id="slot-HHMM"; overtime hours use id="ot-slot-HHMM".
+  const card = document.getElementById("slot-" + key) || document.getElementById("ot-slot-" + key);
+  if (!card) return;
+  const hint = card.querySelector(".add-another-model-hint");
+  if (modelCount >= 1 && !hint) {
+    const formBlock = card.querySelector(".border-t.border-gray-100.pt-3, .border-t.border-amber-100.pt-3");
+    if (formBlock) {
+      const isOtCard = card.dataset.overtimeSlot === "true";
+      const p = document.createElement("p");
+      p.className = `add-another-model-hint text-[10px] font-semibold mb-2 uppercase tracking-wide ${
+        isOtCard ? "text-amber-500" : "text-gray-400"
+      }`;
+      p.innerHTML = isOtCard
+        ? '<i class="fas fa-layer-group mr-1"></i>Add another model to this overtime hour'
+        : '<i class="fas fa-layer-group mr-1"></i>Add another model to this hour';
+      formBlock.insertBefore(p, formBlock.firstChild);
+    }
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// EDIT ROW MODAL
+// ═══════════════════════════════════════════════════════════════════════════
+function openEditModal(hpId, modelName, modelId, qty, hc, comments) {
+  document.getElementById("edit-hp-id").value       = hpId;
+  document.getElementById("edit-model-search").value = modelName;
+  document.getElementById("edit-model-id").value     = modelId;
+  document.getElementById("edit-qty").value          = qty;
+  document.getElementById("edit-hc").value           = hc;
+  document.getElementById("edit-comments").value     = comments;
+  document.getElementById("edit-error").classList.add("hidden");
+  document.getElementById("edit-modal").classList.remove("hidden");
+}
+
+function closeEditModal() {
+  document.getElementById("edit-modal").classList.add("hidden");
+}
+
+function saveEdit() {
+  const hpId    = document.getElementById("edit-hp-id").value;
+  const modelId = document.getElementById("edit-model-id").value;
+  const qty     = document.getElementById("edit-qty").value;
+  const hc      = document.getElementById("edit-hc").value;
+  const comments = document.getElementById("edit-comments").value.trim();
+  const errEl   = document.getElementById("edit-error");
+
+  if (!modelId) {
+    errEl.textContent = "Please select a model from the search results.";
+    errEl.classList.remove("hidden");
+    return;
+  }
+  if (!qty || parseInt(qty) < 0) {
+    errEl.textContent = "Please enter a valid quantity.";
+    errEl.classList.remove("hidden");
+    return;
+  }
+
+  postJSON(`${EDIT_ROW_BASE}${hpId}/`, {
+    model_id:           parseInt(modelId),
+    quantity:           parseInt(qty),
+    headcount_override: hc ? parseInt(hc) : null,
+    comments:           comments,
+  }).then(data => {
+    if (!data.ok) {
+      errEl.textContent = data.error;
+      errEl.classList.remove("hidden");
+      return;
+    }
+    // Update the row in the DOM using named helper classes
+    const rowEl = document.getElementById("hp-row-" + hpId);
+    if (rowEl) {
+      const prevQty   = parseInt(rowEl.querySelector(".row-qty")?.textContent || "0");
+      const modelSpan = rowEl.querySelector(".row-model-name");
+      const qtySpan   = rowEl.querySelector(".row-qty");
+      const hcSpan    = rowEl.querySelector(".row-hc");
+      if (modelSpan) modelSpan.textContent = data.model;
+      if (qtySpan)   qtySpan.textContent   = data.qty;
+      if (hcSpan)    hcSpan.textContent    = "HC: " + data.hc;
+
+      // Also update the onclick of the edit button so next open reflects new values
+      const editBtn = rowEl.querySelector("button[title='Edit this row'], button[title='Edit this overtime row']");
+      if (editBtn) {
+        editBtn.setAttribute("onclick",
+          `openEditModal(${hpId}, '${data.model.replace(/'/g, "\\'")}', ${data.model_id}, ${data.qty}, ${data.hc}, '')`
+        );
+      }
+
+      // Refresh the multi-model total pill for the hour this row belongs to
+      const rowsEl = rowEl.closest('[id^="rows-"]');
+      if (rowsEl && data.slot_total !== undefined && data.slot_total !== null) {
+        const totalCard = document.getElementById(rowsEl.id.replace("rows-", "slot-total-"));
+        if (totalCard) {
+          const qtyEl = totalCard.querySelector(".slot-total-qty");
+          if (qtyEl) qtyEl.textContent = data.slot_total;
+        }
+      }
+
+      updateTotalDisplay(data.qty - prevQty, true);
+    }
+    closeEditModal();
+  }).catch(() => {
+    errEl.textContent = "Network error. Please try again.";
+    errEl.classList.remove("hidden");
+  });
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// DELETE ROW (overtime only — called from dynamically added rows)
+// ═══════════════════════════════════════════════════════════════════════════
+// ── Delete an hour ───────────────────────────────────────────────────────────
+// Opens an in-app confirmation modal, then deletes. The row is only removed
+// from the DOM when the server actually confirms the deletion — a blocked
+// delete (e.g. the hour already has execution captured) keeps the row and
+// surfaces the reason.
+let _pendingDelete = null;
+
+function deleteRow(hpId, btnEl, hourLabel, modelName) {
+  _pendingDelete = { hpId, btnEl };
+  const detail = document.getElementById("delete-row-detail");
+  if (detail) {
+    detail.textContent = (hourLabel && modelName)
+      ? `${hourLabel} — ${modelName}`
+      : "This hour";
+  }
+  document.getElementById("delete-row-error")?.classList.add("hidden");
+  const warnBox = document.getElementById("delete-row-warning");
+  warnBox?.classList.add("hidden");
+
+  const modal = document.getElementById("delete-row-modal");
+  modal?.classList.remove("hidden");
+  modal?.classList.add("flex");
+  document.getElementById("delete-row-confirm")?.focus();
+
+  // Ask the server whether this hour holds captured production, so the user
+  // is warned with real numbers BEFORE confirming.
+  fetch(`${DELETE_ROW_BASE}${hpId}/delete/`, {
+    method:  "GET",
+    headers: { "X-Requested-With": "XMLHttpRequest" },
+  })
+  .then(r => r.json())
+  .then(data => {
+    if (data && data.has_execution && warnBox) {
+      warnBox.innerHTML =
+        `<i class="fas fa-triangle-exclamation mr-1"></i>` +
+        `This hour has execution captured (<strong>${data.actual_quantity}</strong> produced). ` +
+        `Deleting it will also permanently delete that production record, its ` +
+        `comments and its operational events.`;
+      warnBox.classList.remove("hidden");
+    }
+  })
+  .catch(() => { /* pre-flight is advisory only; deletion still confirms */ });
+}
+
+function closeDeleteRowModal() {
+  const modal = document.getElementById("delete-row-modal");
+  modal?.classList.add("hidden");
+  modal?.classList.remove("flex");
+  _pendingDelete = null;
+}
+
+function confirmDeleteRow() {
+  if (!_pendingDelete) return;
+  const { hpId, btnEl } = _pendingDelete;
+  const confirmBtn = document.getElementById("delete-row-confirm");
+  const errorBox   = document.getElementById("delete-row-error");
+
+  if (btnEl) btnEl.disabled = true;
+  if (confirmBtn) {
+    confirmBtn.disabled = true;
+    confirmBtn.innerHTML = '<i class="fas fa-spinner fa-spin mr-1"></i>Deleting…';
+  }
+
+  fetch(`${DELETE_ROW_BASE}${hpId}/delete/`, {
+    method:  "POST",
+    headers: { "X-CSRFToken": CSRF, "X-Requested-With": "XMLHttpRequest" },
+  })
+  .then(r => r.json().then(data => ({ ok: r.ok, data })))
+  .then(({ ok, data }) => {
+    if (!ok || data.ok === false) {
+      // Blocked (e.g. execution already captured) — keep the row, show why.
+      if (errorBox) {
+        errorBox.textContent = data.error || "This hour could not be deleted.";
+        errorBox.classList.remove("hidden");
+      }
+      if (btnEl) btnEl.disabled = false;
+      if (confirmBtn) { confirmBtn.disabled = false; confirmBtn.innerHTML = "Delete hour"; }
+      return;
+    }
+    // Confirmed by the server → now it is safe to drop the row.
+    const rowEl = document.getElementById("hp-row-" + hpId);
+    if (rowEl) {
+      updateTotalDisplay(parseInt(rowEl.querySelector(".row-qty")?.textContent || "0"), false);
+      rowEl.remove();
+    }
+    if (confirmBtn) { confirmBtn.disabled = false; confirmBtn.innerHTML = "Delete hour"; }
+    closeDeleteRowModal();
+  })
+  .catch(() => {
+    if (errorBox) {
+      errorBox.textContent = "Network error — the hour was not deleted.";
+      errorBox.classList.remove("hidden");
+    }
+    if (btnEl) btnEl.disabled = false;
+    if (confirmBtn) { confirmBtn.disabled = false; confirmBtn.innerHTML = "Delete hour"; }
+  });
+}
+// ═══════════════════════════════════════════════════════════════════════════
+// OVERTIME — GENERATE SLOTS (new range-based approach)
+// ═══════════════════════════════════════════════════════════════════════════
+
+// ── Shift window validation helper ───────────────────────────────────────────
+function isInsideShift(slotTime24) {
+  if (!SHIFT) return false;
+  const slotMin  = _timeToMinutes(slotTime24);
+  const startMin = _timeToMinutes(SHIFT.start);
+  const endMin   = _timeToMinutes(SHIFT.end);
+  if (SHIFT.crosses_midnight) {
+    return slotMin >= startMin || slotMin < endMin;
+  }
+  return slotMin >= startMin && slotMin < endMin;
+}
+
+function _timeToMinutes(t) {
+  if (!t) return NaN;
+  const [h, m] = t.split(':').map(Number);
+  return h * 60 + m;
+}
+
+function _minutesToTime24(totalMin) {
+  const h = Math.floor(totalMin / 60) % 24;
+  const m = totalMin % 60;
+  return `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}`;
+}
+
+function _time12(t24) {
+  const [h, m] = t24.split(':').map(Number);
+  const ampm = h >= 12 ? 'PM' : 'AM';
+  const h12  = h % 12 || 12;
+  return `${h12}:${String(m).padStart(2,'0')} ${ampm}`;
+}
+
+function generateOvertimeSlots() {
+  const startVal = document.getElementById("ot-start")?.value;
+  const endVal   = document.getElementById("ot-end")?.value;
+  const errEl    = document.getElementById("ot-error");
+
+  if (!startVal || !endVal) {
+    errEl.textContent = "Please enter both start and end time.";
+    errEl.classList.remove("hidden");
+    return;
+  }
+
+  const startMin = _timeToMinutes(startVal);
+  const endMin   = _timeToMinutes(endVal);
+
+  // Support overnight: if end <= start add 24h
+  const effectiveEnd = endMin <= startMin ? endMin + 1440 : endMin;
+
+  if (effectiveEnd - startMin < 1) {
+    errEl.textContent = "Please enter a valid time range.";
+    errEl.classList.remove("hidden");
+    return;
+  }
+  errEl.classList.add("hidden");
+
+  const section  = document.getElementById("ot-pending-section");
+  const otList   = document.getElementById("overtime-list");
+  section.innerHTML = "";
+  section.classList.remove("hidden");
+
+  // Header card
+  const header = document.createElement("div");
+  header.className = "slot-card slot-overtime p-4";
+  header.innerHTML = `
+    <p class="text-xs font-bold text-amber-700 mb-3">
+      <i class="fas fa-clock mr-1.5"></i>Pending Overtime Slots
+      <span class="text-amber-400 font-normal ml-1">(${_time12(startVal)} – ${_time12(_minutesToTime24(effectiveEnd % 1440))})</span>
+    </p>
+    <p class="text-[11px] text-amber-600 mb-3">
+      Fill in model, quantity and headcount for each hour, then click Save.
+    </p>
+    <div id="ot-slot-list" class="space-y-3"></div>
+  `;
+  section.appendChild(header);
+
+  const slotList = header.querySelector("#ot-slot-list");
+  const DEFAULT_HC = {{ plan.headcount }};
+
+  // Validate: if ANY slot in the range overlaps the shift, block entirely
+  const conflictLabels = [];
+  for (let cur = startMin; cur < effectiveEnd; cur += 60) {
+    const s24 = _minutesToTime24(cur % 1440);
+    if (isInsideShift(s24)) conflictLabels.push(_time12(s24));
+  }
+  if (conflictLabels.length > 0) {
+    const shiftName = SHIFT ? SHIFT.name : "the current shift";
+    errEl.innerHTML = `<i class="fas fa-triangle-exclamation mr-1"></i>
+      Cannot create overtime — the following hours are already part of
+      <strong>${shiftName}</strong>: ${conflictLabels.join(", ")}.
+      Please choose a range fully outside the shift.`;
+    errEl.classList.remove("hidden");
+    section.classList.add("hidden");
+    return;
+  }
+
+  for (let cur = startMin; cur < effectiveEnd; cur += 60) {
+    const slotStart = _minutesToTime24(cur % 1440);
+
+    // Compute actual slot duration — last block may be partial
+    const slotEndMin  = Math.min(cur + 60, effectiveEnd);
+    const slotMins    = slotEndMin - cur;
+    const slotEnd     = _minutesToTime24(slotEndMin % 1440);
+    const isPartial   = slotMins < 60;
+    const label12     = `${_time12(slotStart)} – ${_time12(slotEnd)}`;
+    const uid         = `ot-pending-${slotStart.replace(':','')}`;
+    const uidKey      = slotStart.replace(':','');
+
+    const card = document.createElement("div");
+    card.className = "bg-amber-50 border border-amber-100 rounded-xl p-3 slot-card";
+    card.dataset.slot    = slotStart;
+    card.dataset.slotMin = slotMins;
+    card.dataset.pending = "true";
+    card.setAttribute("ondragover", "event.preventDefault(); this.classList.add('drag-over')");
+    card.setAttribute("ondragleave", "this.classList.remove('drag-over')");
+    card.setAttribute("ondrop",      `handleDrop(event, this)`);
+
+    card.innerHTML = `
+      <div class="flex items-center justify-between mb-2 flex-wrap gap-1">
+        <div class="flex items-center gap-2">
+          <p class="mono text-xs font-bold text-amber-700">${label12}</p>
+          ${isPartial ? `<span class="text-[10px] bg-amber-100 text-amber-600 border border-amber-200 px-1.5 py-0.5 rounded-full font-semibold">${slotMins} min</span>` : ''}
+        </div>
+        <div class="flex items-center gap-1.5 flex-wrap">
+          <div class="flex flex-wrap gap-1" id="bpp-${uidKey}"></div>
+          <span class="text-[10px] font-medium text-gray-400" id="effp-${uidKey}">${slotMins} min effective</span>
+        </div>
+      </div>
+      <div class="flex gap-2 items-end flex-wrap">
+        <div class="flex-1 min-w-32 relative">
+          <label class="block text-[10px] font-semibold text-gray-400 mb-1 uppercase">Model *</label>
+          <input type="text" id="${uid}-search" placeholder="Search model…" autocomplete="off"
+                 class="w-full rounded-lg border border-gray-200 px-2.5 py-1.5 text-xs
+                        focus:border-amber-400 focus:ring-1 focus:ring-amber-400 focus:outline-none">
+          <input type="hidden" id="${uid}-model-id">
+          <div id="${uid}-dropdown" class="model-dropdown hidden"></div>
+        </div>
+        <div class="w-20">
+          <label class="block text-[10px] font-semibold text-gray-400 mb-1 uppercase">Qty *</label>
+          <input type="number" id="${uid}-qty" min="0" placeholder="0"
+                 class="w-full rounded-lg border border-gray-200 px-2 py-1.5 text-xs text-right
+                        focus:border-amber-400 focus:outline-none qty-ot-input"
+                 data-slot-min="${slotMins}" data-uid="${uidKey}">
+        </div>
+        <div class="w-14">
+          <label class="block text-[10px] font-semibold text-gray-400 mb-1 uppercase">HC</label>
+          <input type="number" id="${uid}-hc" min="1" value="${DEFAULT_HC}"
+                 class="w-full rounded-lg border border-gray-200 px-2 py-1.5 text-xs text-center
+                        focus:border-amber-400 focus:outline-none">
+        </div>
+        <button type="button"
+                class="bg-amber-500 hover:bg-amber-600 text-white text-xs font-semibold
+                       px-3 py-1.5 rounded-lg transition flex-shrink-0"
+                onclick="saveOvertimeSlot('${slotStart}', '${uid}', this, '${label12}')">
+          <i class="fas fa-check text-xs"></i> Save
+        </button>
+      </div>
+      <p id="${uid}-err" class="hidden text-[10px] text-red-500 font-semibold mt-1"></p>
+    `;
+    slotList.appendChild(card);
+
+    // Init model search for this slot
+    setupModelSearch(
+      card.querySelector(`#${uid}-search`),
+      card.querySelector(`#${uid}-model-id`),
+      card.querySelector(`#${uid}-dropdown`)
+    );
+  }
+
+  // Scroll to the pending section
+  section.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function saveOvertimeSlot(slotTime, uid, btn, label12) {
+  const modelId = document.getElementById(`${uid}-model-id`)?.value;
+  const qty     = document.getElementById(`${uid}-qty`)?.value;
+  const hc      = document.getElementById(`${uid}-hc`)?.value;
+  const errEl   = document.getElementById(`${uid}-err`);
+
+  if (!modelId) {
+    // Show model-not-found modal
+    document.getElementById("model-nf-modal").classList.remove("hidden");
+    return;
+  }
+  if (!qty || parseInt(qty) < 0) {
+    errEl.textContent = "Please enter a valid quantity.";
+    errEl.classList.remove("hidden");
+    return;
+  }
+
+  btn.disabled  = true;
+  btn.innerHTML = '<i class="fas fa-spinner fa-spin text-xs"></i>';
+
+  postJSON(ADD_ROW_URL, {
+    hour:               slotTime,
+    model_id:           parseInt(modelId),
+    quantity:           parseInt(qty),
+    headcount_override: hc ? parseInt(hc) : null,
+    is_overtime:        true,
+  }).then(data => {
+    if (!data.ok) {
+      btn.disabled  = false;
+      btn.innerHTML = '<i class="fas fa-check text-xs"></i> Save';
+      errEl.textContent = data.error;
+      errEl.classList.remove("hidden");
+      return;
+    }
+
+    const key = slotKey(slotTime);
+
+    // Container that holds one slot-card per overtime hour
+    let list = document.getElementById("overtime-list");
+    if (!list) {
+      list = document.createElement("div");
+      list.className = "space-y-3";
+      list.id         = "overtime-list";
+      document.getElementById("ot-pending-section").before(list);
+    }
+
+    // Build the full slot-card for this overtime hour — same shape as a
+    // regular hour, so Time Blocks (drag & drop) and "effective minutes"
+    // work on it without any special-casing.
+    const otSlotCard = document.createElement("div");
+    otSlotCard.className   = "slot-card slot-overtime p-4";
+    otSlotCard.id           = "ot-slot-" + key;
+    otSlotCard.dataset.slot          = slotTime;
+    otSlotCard.dataset.slotMin       = "60";
+    otSlotCard.dataset.overtimeSlot  = "true";
+    otSlotCard.setAttribute("ondragover", "event.preventDefault(); this.classList.add('drag-over')");
+    otSlotCard.setAttribute("ondragleave", "this.classList.remove('drag-over')");
+    otSlotCard.setAttribute("ondrop", "handleDrop(event, this)");
+
+    otSlotCard.innerHTML = `
+      <div class="flex items-center justify-between mb-3 flex-wrap gap-2">
+        <div class="flex items-center gap-2">
+          <span class="mono text-sm font-bold text-amber-700">${data.hour_12} – ${data.end_12}</span>
+          <span class="text-[10px] font-semibold bg-amber-100 text-amber-700
+                       border border-amber-200 px-2 py-0.5 rounded-full">OT</span>
+        </div>
+        <div class="flex items-center gap-2 flex-wrap">
+          <div class="flex flex-wrap gap-1" id="block-pills-${key}"></div>
+          <span class="text-[10px] font-medium mono text-gray-400" id="eff-${key}">60 min effective</span>
+        </div>
+      </div>
+      <div class="space-y-1.5 mb-3" id="rows-${key}"></div>
+      <div class="hidden mb-2 flex items-center justify-between
+                  bg-amber-100 border border-amber-200 rounded-lg px-3 py-1.5" id="slot-total-${key}">
+        <span class="text-[10px] font-semibold text-amber-700 uppercase tracking-wide">
+          <span class="slot-model-count">0</span> models in this hour
+        </span>
+        <span class="mono text-xs font-bold text-amber-700">
+          <span class="slot-total-qty">0</span> pcs total
+        </span>
+      </div>
+      <div id="non-prod-${key}" class="hidden mb-2 flex items-center gap-2 bg-gray-100 border border-gray-200
+                  rounded-lg px-3 py-2 text-xs text-gray-500 font-medium">
+        <i class="fas fa-pause-circle text-gray-400"></i>
+        Non-productive hour — all time is occupied by blocks.
+        New rows added to this hour will start at 0.
+      </div>
+      ${CAN_WRITE ? `
+      <div class="border-t border-amber-100 pt-3">
+        <div class="flex gap-2 items-end flex-wrap">
+          <div class="flex-1 min-w-36 relative">
+            <label class="block text-[10px] font-semibold text-gray-400 mb-1 uppercase tracking-wide">Model</label>
+            <input type="text" class="model-search w-full rounded-lg border border-gray-200 px-2.5 py-1.5
+                          text-xs focus:border-amber-400 focus:ring-1 focus:ring-amber-400 focus:outline-none"
+                   placeholder="Search model…" autocomplete="off" data-slot="${slotTime}">
+            <input type="hidden" class="model-id-input">
+            <div class="model-dropdown hidden"></div>
+          </div>
+          <div class="w-20">
+            <label class="block text-[10px] font-semibold text-gray-400 mb-1 uppercase tracking-wide">Qty</label>
+            <input type="number" min="0" placeholder="0"
+                   class="qty-input w-full rounded-lg border border-gray-200 px-2 py-1.5
+                          text-xs text-right focus:border-amber-400 focus:outline-none"
+                   data-slot="${slotTime}" data-slot-min="60">
+          </div>
+          <div class="w-14">
+            <label class="block text-[10px] font-semibold text-gray-400 mb-1 uppercase tracking-wide">HC</label>
+            <input type="number" min="1" value="${data.hc}"
+                   class="hc-input w-full rounded-lg border border-gray-200 px-2 py-1.5
+                          text-xs text-center focus:border-amber-400 focus:outline-none" data-slot="${slotTime}">
+          </div>
+          <button type="button" class="add-row-btn bg-amber-500 hover:bg-amber-600 text-white text-xs
+                         font-semibold px-3 py-1.5 rounded-lg transition flex-shrink-0"
+                  data-slot="${slotTime}" data-overtime="true">
+            <i class="fas fa-plus"></i>
+          </button>
+        </div>
+        <p class="hidden text-[10px] text-red-500 font-semibold mt-1" id="err-${key}"></p>
+      </div>` : ''}
+    `;
+    list.appendChild(otSlotCard);
+
+    // Init the model search + add-row handler for the form just created —
+    // the page-load-time querySelectorAll loops only wired up elements
+    // that existed when the page first rendered.
+    const newCard = otSlotCard;
+    const inp  = newCard.querySelector(".model-search");
+    const hid  = newCard.querySelector(".model-id-input");
+    const drop = newCard.querySelector(".model-dropdown");
+    if (inp && hid && drop) setupModelSearch(inp, hid, drop);
+    wireAddRowButton(newCard.querySelector(".add-row-btn"));
+
+    // Render the first model row inside the new card
+    const rowsEl = newCard.querySelector(`#rows-${key}`);
+    const rowDiv = document.createElement("div");
+    rowDiv.id        = "hp-row-" + data.id;
+    rowDiv.className = "flex items-center gap-3 bg-amber-50 rounded-lg px-3 py-2.5 group border border-amber-100";
+    rowDiv.dataset.otHour = slotTime;
+    rowDiv.innerHTML = `
+      <span class="flex-1 text-xs font-semibold text-gray-700 row-model-name">${data.model}</span>
+      <span class="mono text-sm font-bold text-amber-700 row-qty">${data.qty}</span>
+      <span class="text-xs text-gray-400">pcs</span>
+      <span class="text-[10px] text-gray-400 ml-1 row-hc">HC: ${data.hc}</span>
+      <button type="button"
+              class="text-blue-400 hover:text-blue-600
+                     text-xs p-1.5 rounded hover:bg-blue-50 transition"
+              title="Edit this row"
+              onclick="openEditModal(${data.id}, '${data.model.replace(/'/g,"\\'")}',
+                       ${data.model_id}, ${data.qty}, ${data.hc}, '')">
+        <i class="fas fa-pen-to-square"></i>
+      </button>
+      <button type="button"
+              class="text-red-400 hover:text-red-600
+                     text-xs p-1.5 rounded hover:bg-red-50 transition"
+              title="Delete this hour"
+              onclick="deleteRow(${data.id}, this, '${data.hour_12 || ""}', '${(data.model || "").replace(/'/g, "")}')">
+        <i class="fas fa-trash"></i>
+      </button>
+    `;
+    rowsEl.appendChild(rowDiv);
+
+    // Persist any Time Blocks that were dropped on this pending slot, then
+    // render their pills on the now-permanent card and recalc effective time.
+    const pBlocks = pendingBlockMap[key] || [];
+    pBlocks.forEach(pb => {
+      postJSON(ADD_BLOCK_URL, {
+        slot_time:  slotTime,
+        block_type: pb.blockType,
+        minutes:    pb.minutes,
+        reason:     pb.reason || "",
+      }).then(blockData => {
+        if (!blockData.ok) { console.error("Block error:", blockData.error); return; }
+        renderBlockPill(otSlotCard, blockData.block_id,
+          { id: blockData.block_type, label: blockData.label, minutes: blockData.minutes },
+          slotTime);
+        recalcSlot(otSlotCard);
+      });
+    });
+    delete pendingBlockMap[key];
+
+    // Mark pending slot card as done
+    btn.closest("[data-pending]")?.remove();
+    updateTotalDisplay(data.qty, true);
+
+    // If no more pending slots, hide the pending section
+    const remaining = document.querySelectorAll("#ot-slot-list > div");
+    if (!remaining.length) {
+      document.getElementById("ot-pending-section").innerHTML = "";
+      document.getElementById("ot-pending-section").classList.add("hidden");
+    }
+  }).catch(() => {
+    btn.disabled  = false;
+    btn.innerHTML = '<i class="fas fa-check text-xs"></i> Save';
+    errEl.textContent = "Network error. Try again.";
+    errEl.classList.remove("hidden");
+  });
+}
+
+
+// ═══════════════════════════════════════════════════════════════════════════
+// BLOCK EDIT MODAL (for already-placed blocks)
+// ═══════════════════════════════════════════════════════════════════════════
+function openBlockEditModal(blockId, label, minutes, blockType, reason, slotTime) {
+  document.getElementById("bem-block-id").value  = blockId;
+  document.getElementById("bem-slot-time").value = slotTime;
+  document.getElementById("bem-title").textContent = label || "Edit Block";
+  document.getElementById("bem-minutes").value   = minutes;
+  document.getElementById("bem-error").classList.add("hidden");
+
+  const reasonWrap = document.getElementById("bem-reason-wrap");
+  const reasonInp  = document.getElementById("bem-reason");
+  if (blockType === "extra") {
+    reasonWrap.classList.remove("hidden");
+    if (reasonInp) reasonInp.value = reason || "";
+  } else {
+    reasonWrap.classList.add("hidden");
+  }
+
+  document.getElementById("block-edit-modal").classList.remove("hidden");
+}
+
+function closeBlockEditModal() {
+  document.getElementById("block-edit-modal").classList.add("hidden");
+}
+
+function saveBlockEdit() {
+  const blockId  = document.getElementById("bem-block-id").value;
+  const slotTime = document.getElementById("bem-slot-time").value;
+  const minutes  = parseInt(document.getElementById("bem-minutes").value, 10);
+  const errEl    = document.getElementById("bem-error");
+
+  // Check: would the edited block push effective time below 0?
+  const slotEl   = document.querySelector(`[data-slot="${slotTime}"]`);
+  if (slotEl) {
+    const totalMin    = parseInt(slotEl.dataset.slotMin, 10) || 60;
+    const uidKey      = slotTime.replace(":", "");
+    const pillContainer = document.getElementById("block-pills-" + uidKey);
+    let otherBlocksMin = 0;
+    pillContainer?.querySelectorAll(".block-pill").forEach(p => {
+      if (String(p.dataset.blockId) !== String(blockId)) {
+        otherBlocksMin += parseInt(p.dataset.minutes, 10) || 0;
+      }
+    });
+    if (otherBlocksMin + minutes > totalMin) {
+      const remaining = Math.max(0, totalMin - otherBlocksMin);
+      errEl.textContent = remaining === 0
+        ? "Effective production time is already at 0 minutes. Cannot increase block duration."
+        : `Maximum ${remaining} min allowed for this block.`;
+      errEl.classList.remove("hidden");
+      return;
+    }
+  }
+  const reason   = document.getElementById("bem-reason")?.value?.trim() || "";
+
+  if (isNaN(minutes) || minutes < 0) {
+    errEl.textContent = "Please enter a valid duration.";
+    errEl.classList.remove("hidden");
+    return;
+  }
+
+  postJSON(`${EDIT_BLOCK_BASE}${blockId}/`, { minutes, reason })
+    .then(data => {
+      if (!data.ok) {
+        errEl.textContent = data.error;
+        errEl.classList.remove("hidden");
+        return;
+      }
+      // Update the pill in the DOM
+      const pill = document.querySelector(`[data-block-id="${blockId}"]`);
+      if (pill) {
+        const newLabel = data.label + (data.minutes ? ` · ${data.minutes}m` : "");
+        // Preserve the pen icon prefix
+        pill.innerHTML = `<i class="fas fa-pen text-[9px] opacity-50 mr-0.5"></i>${newLabel}`;
+        pill.dataset.minutes = data.minutes;
+        // Update onclick to reflect new values
+        pill.setAttribute("onclick",
+          `openBlockEditModal(${data.block_id}, '${data.label.replace(/'/g,"\\'")}',
+           ${data.minutes}, '${data.block_type}', '', '${slotTime}')`
+        );
+      }
+      // Recalc effective time
+      const slotEl = document.querySelector(`[data-slot="${slotTime}"]`);
+      if (slotEl) recalcSlot(slotEl);
+      closeBlockEditModal();
+    })
+    .catch(() => {
+      errEl.textContent = "Network error. Please try again.";
+      errEl.classList.remove("hidden");
+    });
+}
+
+function deleteCurrentBlock() {
+  const blockId  = document.getElementById("bem-block-id").value;
+  const slotTime = document.getElementById("bem-slot-time").value;
+  closeBlockEditModal();
+  removeBlock(parseInt(blockId), slotTime);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// DRAG & DROP BLOCKS
+// ═══════════════════════════════════════════════════════════════════════════
+// ── Pending blocks for unsaved overtime slots ────────────────────────────────
+const pendingBlockMap = {};   // uidKey → [{blockType, minutes, reason, tempId}]
+
+function recalcPendingSlot(slotEl) {
+  const uidKey   = (slotEl.dataset.slot || "").replace(":", "");
+  const totalMin = parseInt(slotEl.dataset.slotMin, 10) || 60;
+  const blocks   = pendingBlockMap[uidKey] || [];
+  const usedMin  = blocks.reduce((s, b) => s + b.minutes, 0);
+  const effMin   = Math.max(0, totalMin - usedMin);
+  const effEl    = document.getElementById("effp-" + uidKey);
+  if (effEl) {
+    effEl.textContent = `${effMin} min effective`;
+    effEl.style.color = effMin < totalMin ? "#ef4444" : "#6b7280";
+  }
+}
+
+function renderPendingBlockPill(slotEl, tempId, block) {
+  const uidKey   = (slotEl.dataset.slot || "").replace(":", "");
+  const c        = BLOCK_COLORS[block.id] || BLOCK_COLORS.extra;
+  const pill     = document.createElement("span");
+  pill.className = `block-pill ${c.bg} ${c.text} ${c.border}`;
+  pill.dataset.tempId = tempId;
+  pill.title     = "Click to remove";
+  pill.innerHTML = `<i class="fas fa-pen text-[9px] opacity-50 mr-0.5"></i>${block.label}${block.minutes ? " · " + block.minutes + "m" : ""}`;
+  pill.addEventListener("click", () => {
+    pendingBlockMap[uidKey] = (pendingBlockMap[uidKey] || []).filter(b => b.tempId !== tempId);
+    pill.remove();
+    recalcPendingSlot(slotEl);
+  });
+  const container = document.getElementById("bpp-" + uidKey);
+  if (container) container.appendChild(pill);
+  recalcPendingSlot(slotEl);
+}
+
+let draggedBlock = null, pendingDrop = null;
+
+document.querySelectorAll(".time-block").forEach(el => {
+  el.addEventListener("dragstart", function (e) {
+    draggedBlock = {
+      id: this.dataset.id, label: this.dataset.label,
+      icon: this.dataset.icon, color: this.dataset.color,
+      minutes: parseInt(this.dataset.minutes, 10),
+    };
+    e.dataTransfer.effectAllowed = "copy";
+  });
+});
+
+function handleDrop(e, slotEl) {
+  e.preventDefault();
+  slotEl.classList.remove("drag-over");
+  if (!draggedBlock) return;
+
+  // Guard: slot is fully blocked — effective time already at 0
+  if (slotEl.dataset.blockLocked === "true") {
+    showBlockLockedMsg(e);
+    draggedBlock = null;
+    return;
+  }
+
+  pendingDrop = { slotEl, block: { ...draggedBlock }, isPending: slotEl.dataset.pending === "true" };
+  document.getElementById("block-modal-title").textContent = draggedBlock.label;
+  document.getElementById("bm-minutes").value              = draggedBlock.minutes;
+  const rw = document.getElementById("bm-reason-wrap");
+  const ri = document.getElementById("bm-reason");
+  if (draggedBlock.id === "extra") {
+    rw.classList.remove("hidden");
+    if (ri) ri.value = "";
+  } else { rw.classList.add("hidden"); }
+  document.getElementById("block-modal").classList.remove("hidden");
+}
+
+function confirmBlock() {
+  if (!pendingDrop) return;
+  const mins   = parseInt(document.getElementById("bm-minutes").value, 10) || 0;
+  const reason = document.getElementById("bm-reason")?.value?.trim() || "";
+  const { slotEl, block, isPending } = pendingDrop;
+
+  // Validate: total blocks must not exceed slot duration
+  const totalSlotMin  = parseInt(slotEl.dataset.slotMin, 10) || 60;
+  const uidKey        = (slotEl.dataset.slot || "").replace(":", "");
+  const pillContainer = isPending
+    ? document.getElementById("bpp-" + uidKey)
+    : document.getElementById("block-pills-" + uidKey);
+  let currentUsed = 0;
+  pillContainer?.querySelectorAll("[data-minutes]").forEach(p => {
+    currentUsed += parseInt(p.dataset.minutes, 10) || 0;
+  });
+  if (currentUsed + mins > totalSlotMin) {
+    const remaining = totalSlotMin - currentUsed;
+    document.getElementById("bm-minutes").value = remaining > 0 ? remaining : 0;
+    document.getElementById("bm-minutes").classList.add("border-red-400");
+    // Show inline error in the modal
+    let errEl = document.getElementById("block-modal-err");
+    if (!errEl) {
+      errEl = document.createElement("p");
+      errEl.id        = "block-modal-err";
+      errEl.className = "text-xs text-red-500 font-semibold mt-2";
+      document.getElementById("bm-minutes").after(errEl);
+    }
+    errEl.textContent = remaining <= 0
+      ? `No additional Time Blocks can be added because effective production time has reached 0 minutes.`
+      : `Only ${remaining} min remaining in this slot (${totalSlotMin} min total). Reduce the duration.`;
+    return;  // Don't close modal — let user adjust
+  }
+  // Clear any previous error
+  const prevErr = document.getElementById("block-modal-err");
+  if (prevErr) prevErr.remove();
+  document.getElementById("bm-minutes").classList.remove("border-red-400");
+
+  block.minutes = mins;
+  if (reason) block.label = reason;
+
+  document.getElementById("block-modal").classList.add("hidden");
+
+  if (isPending) {
+    // Pending overtime slot — store in map, render pill, recalc (no DB yet)
+    const uidKey = (slotEl.dataset.slot || "").replace(":", "");
+    const tempId = Date.now();
+    if (!pendingBlockMap[uidKey]) pendingBlockMap[uidKey] = [];
+    pendingBlockMap[uidKey].push({
+      tempId, blockType: block.id, minutes: block.minutes, reason,
+    });
+    renderPendingBlockPill(slotEl, tempId, block);
+  } else {
+    // Regular shift slot — save to DB
+    postJSON(ADD_BLOCK_URL, {
+      slot_time: slotEl.dataset.slot,
+      block_type: block.id,
+      minutes: block.minutes,
+      reason: reason,
+    }).then(data => {
+      if (!data.ok) { console.error("Block error:", data.error); return; }
+      renderBlockPill(slotEl, data.block_id, block, slotEl.dataset.slot);
+      recalcSlot(slotEl);
+    });
+  }
+
+  pendingDrop = draggedBlock = null;
+}
+
+function cancelBlock() {
+  document.getElementById("block-modal").classList.add("hidden");
+  pendingDrop = null;
+}
+
+function renderBlockPill(slotEl, blockId, block, slotTime) {
+  const c    = BLOCK_COLORS[block.id] || BLOCK_COLORS.extra;
+  const pill = document.createElement("span");
+  pill.className       = `block-pill ${c.bg} ${c.text} ${c.border}`;
+  pill.dataset.blockId = blockId;
+  pill.dataset.minutes = block.minutes;
+  pill.title           = "Click to edit or remove";
+  pill.innerHTML       = `<i class="fas fa-pen text-[9px] opacity-50 mr-0.5"></i>${block.label}${block.minutes ? " · " + block.minutes + "m" : ""}`;
+  pill.addEventListener("click", () =>
+    openBlockEditModal(blockId, block.label, block.minutes, block.id, block.reason || "", slotTime)
+  );
+  const container = document.getElementById("block-pills-" + slotKey(slotTime));
+  if (container) container.appendChild(pill);
+}
+
+function removeBlock(blockId, slotTime) {
+  fetch(`${REMOVE_BLOCK_BASE}${blockId}/`, {
+    method: "POST", headers: { "X-CSRFToken": CSRF },
+  }).then(r => r.json()).then(data => {
+    if (!data.ok) return;
+    document.querySelector(`[data-block-id="${blockId}"]`)?.remove();
+    const slotEl = document.getElementById("slot-" + slotKey(slotTime))
+                || document.querySelector(`[data-slot="${slotTime}"]`);
+    if (slotEl) recalcSlot(slotEl);
+  });
+}
+
+function recalcSlot(slotEl) {
+  const slotTime = slotEl.dataset.slot;
+  const totalMin = parseInt(slotEl.dataset.slotMin, 10) || 60;
+  let usedMin    = 0;
+  document.getElementById("block-pills-" + slotKey(slotTime))
+    ?.querySelectorAll(".block-pill")
+    .forEach(p => { usedMin += parseInt(p.dataset.minutes, 10) || 0; });
+  const effMin   = Math.max(0, totalMin - usedMin);
+  const effEl    = document.getElementById("eff-" + slotKey(slotTime));
+  if (effEl) {
+    effEl.textContent = `${effMin} min effective`;
+    effEl.style.color = effMin < totalMin ? "#ef4444" : "";
+  }
+
+  // Non-productive hour handling: effective = 0 → lock qty at 0, show badge
+  const badge    = document.getElementById("non-prod-" + slotKey(slotTime));
+  const qtyInput = slotEl.querySelector(".qty-input");
+  if (effMin === 0) {
+    if (qtyInput) {
+      qtyInput.value    = 0;
+      qtyInput.disabled = true;
+      qtyInput.classList.add("opacity-40", "cursor-not-allowed");
+    }
+    badge?.classList.remove("hidden");
+    // Lock drop zone — no more time blocks allowed
+    slotEl.dataset.blockLocked = "true";
+    slotEl.style.cursor        = "not-allowed";
+    slotEl.title               = "Effective time is 0 — no more Time Blocks can be added.";
+    slotEl.setAttribute("ondragover", "event.preventDefault(); showBlockLockedMsg(event)");
+    slotEl.setAttribute("ondrop",     "showBlockLockedMsg(event)");
+  } else {
+    if (qtyInput) {
+      qtyInput.disabled = false;
+      qtyInput.classList.remove("opacity-40", "cursor-not-allowed");
+    }
+    badge?.classList.add("hidden");
+    // Unlock drop zone
+    slotEl.dataset.blockLocked = "false";
+    slotEl.style.cursor        = "";
+    slotEl.title               = "";
+    slotEl.setAttribute("ondragover", "event.preventDefault(); this.classList.add('drag-over')");
+    slotEl.setAttribute("ondragleave","this.classList.remove('drag-over')");
+    slotEl.setAttribute("ondrop",     "handleDrop(event, this)");
+  }
+}
+
+// Show "locked" toast when dragging onto a fully-blocked slot
+function showBlockLockedMsg(e) {
+  e.preventDefault();
+  e.stopPropagation();
+  const existing = document.getElementById("block-locked-toast");
+  if (existing) { existing.remove(); }
+  const toast = document.createElement("div");
+  toast.id        = "block-locked-toast";
+  toast.className = "fixed bottom-6 left-1/2 -translate-x-1/2 z-[9999] flex items-center gap-3 "
+                  + "bg-gray-900 text-white text-sm font-medium px-5 py-3 rounded-xl shadow-xl "
+                  + "border border-gray-700 pointer-events-none";
+  toast.innerHTML = '<i class="fas fa-lock text-red-400"></i>'
+                  + '<span>No additional Time Blocks can be added because '
+                  + 'effective production time has reached <strong>0 minutes</strong>.</span>';
+  document.body.appendChild(toast);
+  setTimeout(() => toast.remove(), 3500);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// HEADCOUNT MODAL
+// ═══════════════════════════════════════════════════════════════════════════
+function openHcModal()  { document.getElementById("hc-modal").classList.remove("hidden"); }
+function closeHcModal() { document.getElementById("hc-modal").classList.add("hidden"); }
+
+function saveHeadcount() {
+  const newVal  = document.getElementById("hc-new-val")?.value;
+  const comment = document.getElementById("hc-comment")?.value?.trim();
+  const errEl   = document.getElementById("hc-error");
+  if (!comment) {
+    errEl.textContent = "A comment is required when changing the headcount.";
+    errEl.classList.remove("hidden");
+    return;
+  }
+  const applyAll = document.getElementById("hc-apply-all")?.checked || false;
+  postJSON(HC_URL, { new_value: parseInt(newVal), comment, apply_to_all: applyAll })
+  .then(data => {
+    if (!data.ok) { errEl.textContent = data.error; errEl.classList.remove("hidden"); return; }
+    document.getElementById("hc-display").textContent = data.new_headcount;
+    document.getElementById("hc-current").textContent = data.new_headcount;
+    // Reload so every hour row shows the value it now inherits. Cheaper and
+    // safer than patching each row's HC label by hand.
+    errEl.classList.add("hidden");
+    closeHcModal();
+    window.location.reload();
+  });
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// TOTAL COUNTER (client-side approximation)
+// ═══════════════════════════════════════════════════════════════════════════
+let runningTotal = {{ total_planned }};
+function updateTotalDisplay(delta, add) {
+  runningTotal += add ? delta : -delta;
+  const el = document.getElementById("total-planned-display");
+  if (el) el.textContent = runningTotal + " pcs";
+}
+</script>
+{% endblock %}

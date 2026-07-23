@@ -1,0 +1,125 @@
+{# templates/core/sp_form.html #}
+{# ─────────────────────────────────────────────────────────────────────────── #}
+{# hrxhr_project/templates/core/sp_form.html                     #}
+{# ─────────────────────────────────────────────────────────────────────────── #}
+{% extends "base.html" %}
+
+{% block title %}{{ action }} — MTE Hr×Hr{% endblock %}
+{% block page_title %}{{ action }}{% endblock %}
+
+{% block content %}
+<div class="max-w-lg">
+  <div class="bg-white rounded-xl border border-gray-200 shadow-sm p-6">
+
+    <form method="post" novalidate>
+      {% csrf_token %}
+      <div class="space-y-5">
+
+        {# Work Center #}
+        <div>
+          <label class="block text-xs font-semibold text-gray-600 mb-1.5 uppercase tracking-wide">
+            Work Center <span class="text-red-400">*</span>
+          </label>
+          {{ form.work_center }}
+          {% if form.work_center.errors %}
+          <p class="text-xs text-red-500 mt-1">{{ form.work_center.errors.0 }}</p>
+          {% endif %}
+        </div>
+
+        {# Name #}
+        <div>
+          <label class="block text-xs font-semibold text-gray-600 mb-1.5 uppercase tracking-wide">
+            Subprocess Name <span class="text-red-400">*</span>
+          </label>
+          {{ form.name }}
+          {% if form.name.errors %}
+          <p class="text-xs text-red-500 mt-1">{{ form.name.errors.0 }}</p>
+          {% endif %}
+        </div>
+
+        {# Subprocess Type #}
+        <div>
+          <label class="block text-xs font-semibold text-gray-600 mb-1.5 uppercase tracking-wide">
+            Subprocess Type <span class="text-red-400">*</span>
+          </label>
+          {{ form.subprocess_type }}
+          {% if form.subprocess_type.errors %}
+          <p class="text-xs text-red-500 mt-1">{{ form.subprocess_type.errors.0 }}</p>
+          {% endif %}
+
+          {# Live type info card — appears when a type is selected #}
+          <div id="type-info"
+               class="hidden mt-2 flex items-start gap-3 rounded-lg border border-blue-100
+                      bg-blue-50 px-3 py-2.5 text-xs text-blue-700">
+            <i class="fas fa-circle-info mt-0.5 flex-shrink-0"></i>
+            <div>
+              <p class="font-semibold" id="type-info-name"></p>
+              <p id="type-info-applies" class="text-blue-500"></p>
+              <p id="type-info-upc" class="font-medium mt-0.5"></p>
+            </div>
+          </div>
+
+          <p class="text-[11px] text-gray-400 mt-1.5">
+            Don't see the type you need?
+            <a href="{% url 'core:spt_list' %}" class="text-blue-500 hover:underline">
+              Manage subprocess types →
+            </a>
+          </p>
+        </div>
+
+      </div>
+
+      <div class="flex gap-3 mt-6 pt-5 border-t border-gray-100">
+        <button type="submit"
+                class="bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold
+                       px-5 py-2.5 rounded-lg transition">
+          <i class="fas fa-save mr-1.5"></i>Save
+        </button>
+        <a href="{% url 'core:sp_list' %}"
+           class="text-sm text-gray-500 hover:text-gray-800 px-4 py-2.5 rounded-lg
+                  border border-gray-200 hover:border-gray-300 transition">
+          Cancel
+        </a>
+      </div>
+    </form>
+  </div>
+</div>
+
+{# Inline type data for JS — avoids extra AJAX call #}
+<script>
+const SPT_DATA = {
+  {% for spt in form.fields.subprocess_type.queryset %}
+  "{{ spt.id }}": {
+    name:    "{{ spt.name|escapejs }}",
+    applies: "{{ spt.get_applies_to_display|escapejs }}",
+    upc:     {{ spt.units_per_piece }},
+    label:   "{{ spt.conversion_label|escapejs }}",
+  },
+  {% endfor %}
+};
+
+(function () {
+  const sel      = document.getElementById("{{ form.subprocess_type.id_for_label }}");
+  const infoCard = document.getElementById("type-info");
+  const infoName = document.getElementById("type-info-name");
+  const infoApp  = document.getElementById("type-info-applies");
+  const infoUpc  = document.getElementById("type-info-upc");
+
+  function update() {
+    const val = sel?.value;
+    const spt = SPT_DATA[val];
+    if (spt) {
+      if (infoName) infoName.textContent = spt.name;
+      if (infoApp)  infoApp.textContent  = "Applies to: " + spt.applies;
+      if (infoUpc)  infoUpc.textContent  = spt.label;
+      infoCard?.classList.remove("hidden");
+    } else {
+      infoCard?.classList.add("hidden");
+    }
+  }
+
+  sel?.addEventListener("change", update);
+  update();   // populate on load when editing existing subprocess
+})();
+</script>
+{% endblock %}

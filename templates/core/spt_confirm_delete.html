@@ -1,0 +1,45 @@
+{# templates/core/spt_confirm_delete.html #}
+{# ─────────────────────────────────────────────────────────────────────────── #}
+{# hrxhr_project/templates/core/spt_confirm_delete.html   #}
+{# ─────────────────────────────────────────────────────────────────────────── #}
+{% extends "base.html" %}
+
+{% block title %}Delete Subprocess Type — MTE Hr×Hr{% endblock %}
+{% block page_title %}Delete Subprocess Type{% endblock %}
+
+{% block content %}
+<div class="max-w-md">
+  <div class="bg-white rounded-xl border border-red-200 shadow-sm p-6 text-center">
+
+    <div class="w-14 h-14 rounded-full bg-red-100 flex items-center justify-center mx-auto mb-4">
+      <i class="fas fa-triangle-exclamation text-red-500 text-2xl"></i>
+    </div>
+
+    <h2 class="text-base font-bold text-gray-800 mb-1">Delete "{{ spt.name }}"?</h2>
+    <p class="text-sm text-gray-500 mb-1">
+      Applies to: <strong>{{ spt.get_applies_to_display }}</strong> ·
+      {{ spt.units_per_piece }} unit{{ spt.units_per_piece|pluralize }}/piece
+    </p>
+    <p class="text-sm text-red-600 font-medium mt-3 mb-6">
+      This action cannot be undone.
+    </p>
+
+    <div class="flex gap-3">
+      <form method="post" class="flex-1">
+        {% csrf_token %}
+        <button type="submit"
+                class="w-full bg-red-600 hover:bg-red-700 text-white text-sm font-semibold
+                       py-2.5 rounded-lg transition">
+          <i class="fas fa-trash mr-1.5"></i>Yes, Delete
+        </button>
+      </form>
+      <a href="{% url 'core:spt_list' %}"
+         class="flex-1 text-center text-sm font-semibold text-gray-600 hover:text-gray-800
+                border border-gray-200 hover:border-gray-300 py-2.5 rounded-lg transition">
+        Cancel
+      </a>
+    </div>
+
+  </div>
+</div>
+{% endblock %}

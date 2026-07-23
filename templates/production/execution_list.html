@@ -1,0 +1,361 @@
+{# templates/production/execution_list.html #}
+{% extends "base.html" %}
+
+{% block title %}Execution — MTE Hr×Hr{% endblock %}
+{% block page_title %}Production Execution{% endblock %}
+
+{% block content %}
+
+{# ── Filter panel ── #}
+<form method="get"
+      class="bg-white rounded-xl border border-gray-200 shadow-sm px-5 py-4 mb-4">
+  <div class="flex flex-wrap items-end gap-3">
+
+    <div class="flex flex-col gap-1 min-w-36">
+      <label class="text-xs font-semibold text-gray-500 uppercase tracking-wide">
+        <i class="fas fa-calendar mr-1 text-gray-400"></i>From
+      </label>
+      <input type="date" name="date_from" value="{{ filter.date_from }}"
+             class="rounded-lg border border-gray-300 px-3 py-1.5 text-sm shadow-sm
+                    focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none">
+    </div>
+
+    <div class="flex flex-col gap-1 min-w-36">
+      <label class="text-xs font-semibold text-gray-500 uppercase tracking-wide">
+        <i class="fas fa-calendar mr-1 text-gray-400"></i>To
+      </label>
+      <input type="date" name="date_to" value="{{ filter.date_to }}"
+             class="rounded-lg border border-gray-300 px-3 py-1.5 text-sm shadow-sm
+                    focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none">
+    </div>
+
+    <div class="flex flex-col gap-1 min-w-44">
+      <label class="text-xs font-semibold text-gray-500 uppercase tracking-wide">
+        <i class="fas fa-industry mr-1 text-gray-400"></i>Work Center
+      </label>
+      <select name="work_center"
+              class="rounded-lg border border-gray-300 px-3 py-1.5 text-sm shadow-sm
+                     focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none bg-white">
+        <option value="">— All —</option>
+        {% for wc in work_centers %}
+        <option value="{{ wc.id }}" {% if filter.work_center == wc.id|stringformat:"s" %}selected{% endif %}>
+          {{ wc.name }}
+        </option>
+        {% endfor %}
+      </select>
+    </div>
+
+    {# Subprocess #}
+    <div class="flex flex-col gap-1 min-w-48">
+      <label class="text-xs font-semibold text-gray-500 uppercase tracking-wide">
+        <i class="fas fa-diagram-project mr-1 text-gray-400"></i>Subprocess
+      </label>
+      <select name="subprocess"
+              class="rounded-lg border border-gray-300 px-3 py-1.5 text-sm shadow-sm
+                     focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none bg-white">
+        <option value="">— All —</option>
+        {% for sp in subprocesses %}
+        <option value="{{ sp.id }}" data-wc="{{ sp.work_center_id }}" {% if filter.subprocess == sp.id|stringformat:"s" %}selected{% endif %}>
+          {{ sp.work_center.name }} · {{ sp.name }}
+        </option>
+        {% endfor %}
+      </select>
+    </div>
+
+
+    <div class="flex flex-col gap-1 min-w-40">
+      <label class="text-xs font-semibold text-gray-500 uppercase tracking-wide">
+        <i class="fas fa-clock mr-1 text-gray-400"></i>Shift
+      </label>
+      <select name="shift"
+              class="rounded-lg border border-gray-300 px-3 py-1.5 text-sm shadow-sm
+                     focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none bg-white">
+        <option value="">— All —</option>
+        {% for sh in shifts %}
+        <option value="{{ sh.id }}" {% if filter.shift == sh.id|stringformat:"s" %}selected{% endif %}>
+          {{ sh.name }}
+        </option>
+        {% endfor %}
+      </select>
+    </div>
+
+    <div class="flex flex-col gap-1 min-w-44">
+      <label class="text-xs font-semibold text-gray-500 uppercase tracking-wide">
+        <i class="fas fa-business-time mr-1 text-gray-400"></i>Overtime
+      </label>
+      <select name="overtime"
+              class="rounded-lg border border-gray-300 px-3 py-1.5 text-sm shadow-sm
+                     focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none bg-white">
+        <option value="">All Records</option>
+        <option value="1" {% if filter.overtime == "1" %}selected{% endif %}>Overtime Only</option>
+        <option value="0" {% if filter.overtime == "0" %}selected{% endif %}>Regular Time Only</option>
+      </select>
+    </div>
+
+    <div class="flex gap-2 pb-0.5">
+      <button type="submit"
+              class="inline-flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white
+                     text-xs font-semibold px-4 py-2 rounded-lg transition">
+        <i class="fas fa-magnifying-glass text-xs"></i> Filter
+      </button>
+      {% if filter.date_from or filter.date_to or filter.work_center or filter.shift or filter.overtime %}
+      <a href="{% url 'production:execution_list' %}"
+         class="inline-flex items-center gap-1.5 text-xs font-semibold text-gray-500
+                hover:text-gray-800 border border-gray-200 hover:border-gray-300
+                px-4 py-2 rounded-lg transition">
+        <i class="fas fa-xmark text-xs"></i> Clear
+      </a>
+      {% endif %}
+    </div>
+
+  </div>
+
+  {# Active filter chips #}
+  {% if filter.date_from or filter.date_to or filter.work_center or filter.shift or filter.overtime %}
+  <div class="flex flex-wrap gap-2 mt-3 pt-3 border-t border-gray-100">
+    <span class="text-xs text-gray-400">Active filters:</span>
+    {% if filter.date_from %}
+    <span class="inline-flex items-center gap-1 bg-blue-50 text-blue-700 border border-blue-200
+                 text-xs font-medium px-2 py-0.5 rounded-full">
+      <i class="fas fa-calendar-day text-[10px]"></i> From {{ filter.date_from }}
+    </span>
+    {% endif %}
+    {% if filter.date_to %}
+    <span class="inline-flex items-center gap-1 bg-blue-50 text-blue-700 border border-blue-200
+                 text-xs font-medium px-2 py-0.5 rounded-full">
+      <i class="fas fa-calendar-day text-[10px]"></i> To {{ filter.date_to }}
+    </span>
+    {% endif %}
+    {% if filter.work_center %}
+    <span class="inline-flex items-center gap-1 bg-indigo-50 text-indigo-700 border border-indigo-200
+                 text-xs font-medium px-2 py-0.5 rounded-full">
+      <i class="fas fa-industry text-[10px]"></i>
+      {% for wc in work_centers %}{% if wc.id|stringformat:"s" == filter.work_center %}{{ wc.name }}{% endif %}{% endfor %}
+    </span>
+    {% endif %}
+  </div>
+  {% endif %}
+</form>
+
+{# ── Plans table ── #}
+<div class="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+  <div class="px-5 py-3 border-b border-gray-100 flex items-center justify-between">
+    <p class="text-sm font-semibold text-gray-700">
+      {% if filter.date_from or filter.date_to or filter.work_center or filter.shift or filter.overtime %}
+        Filtered results
+      {% else %}
+        Select a plan to enter actuals
+      {% endif %}
+    </p>
+    <p class="text-xs text-gray-400 mono">{{ enriched|length }} plan{{ enriched|length|pluralize:"s" }}
+      {% if total_scrap %}
+      · <span class="text-rose-500 font-semibold" title="Total scrap across the plans shown, in units.">
+          {{ total_scrap }} u scrap
+        </span>
+      {% endif %}
+    </p>
+  </div>
+
+  {% if enriched %}
+  <div class="overflow-x-auto">
+    <table class="min-w-full text-sm">
+      <thead>
+        <tr class="bg-gray-50 border-b border-gray-100">
+          <th class="px-4 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Date</th>
+          <th class="px-4 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Work Center</th>
+          <th class="px-4 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Subprocess</th>
+          <th class="px-4 py-2.5 text-center text-xs font-semibold text-gray-500 uppercase tracking-wide">Pieces</th>
+          <th class="px-4 py-2.5 text-center text-xs font-semibold text-gray-500 uppercase tracking-wide">Units Flow</th>
+          <th class="px-4 py-2.5 text-center text-xs font-semibold text-gray-500 uppercase tracking-wide">Progress</th>
+          <th class="px-4 py-2.5 text-center text-xs font-semibold text-gray-500 uppercase tracking-wide">Overtime</th>
+          <th class="px-4 py-2.5 text-right text-xs font-semibold text-gray-500 uppercase tracking-wide"></th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-gray-50">
+        {% for item in enriched %}
+        {% with plan=item.plan s=item.stats %}
+        <tr class="transition-colors align-top">
+          <td class="px-4 py-3 mono text-xs font-semibold text-gray-900">{{ plan.date }}</td>
+          <td class="px-4 py-3 text-gray-700">{{ plan.work_center.name }}</td>
+
+          {# Subprocess badge #}
+          <td class="px-4 py-3">
+            {% with sp=plan.subprocess %}
+            {% include "includes/subprocess_badge.html" %}
+            {% endwith %}
+          </td>
+
+          {# Pieces completed / planned #}
+          <td class="px-4 py-3 text-center">
+            {% if s.conversion_factor > 1 %}
+              {% if s.model_breakdown %}
+              <div class="flex flex-col gap-0.5">
+                {% for mb in s.model_breakdown %}
+                <span class="mono text-xs font-bold
+                  {% if mb.pieces > 0 %}text-emerald-600{% else %}text-gray-400{% endif %}">
+                  {{ mb.model_name }}: {{ mb.pieces }} pz
+                </span>
+                {% endfor %}
+              </div>
+              {% else %}
+              <span class="text-gray-300 text-xs">—</span>
+              {% endif %}
+            {% else %}
+              <span class="mono text-xs font-bold
+                {% if s.total_completed_pieces >= s.total_planned_pieces %}text-emerald-600
+                {% elif s.total_completed_pieces > 0 %}text-amber-600
+                {% else %}text-gray-400{% endif %}">
+                {{ s.total_completed_pieces }} / {{ s.total_planned_pieces }}
+              </span>
+            {% endif %}
+          </td>
+
+          {# Units flow (CF > 1 only) #}
+          <td class="px-4 py-3 text-center">
+            {% if s.conversion_factor > 1 %}
+              {% if s.model_breakdown %}
+              <div class="flex flex-col gap-1.5">
+                {% for mb in s.model_breakdown %}
+                <div class="flex items-center gap-2 justify-center">
+                  <div class="flex items-center gap-0.5" title="1 dot = 6 units">
+                    {% for i in "123456" %}
+                      {% if forloop.counter <= s.conversion_factor %}
+                        {% if forloop.counter <= mb.remainder %}
+                          <span class="w-2.5 h-2.5 rounded-full bg-amber-400 border border-amber-500"
+                                title="{{ forloop.counter }}/{{ s.conversion_factor }} units"></span>
+                        {% else %}
+                          <span class="w-2.5 h-2.5 rounded-full bg-gray-100 border border-gray-300"
+                                title="unit {{ forloop.counter }} pending"></span>
+                        {% endif %}
+                      {% endif %}
+                    {% endfor %}
+                    {% if mb.remainder > 0 %}
+                    <span class="ml-1 text-[9px] text-amber-600 font-semibold mono">
+                      {{ mb.remainder }}/{{ s.conversion_factor }}
+                    </span>
+                    {% endif %}
+                  </div>
+                  <div class="text-left">
+                    <span class="mono text-xs font-semibold text-gray-700">{{ mb.model_name }}</span>
+                    <span class="text-gray-400 text-xs mx-1">→</span>
+                    <span class="mono text-xs font-bold
+                      {% if mb.pieces > 0 %}text-emerald-600{% else %}text-gray-400{% endif %}">
+                      {{ mb.pieces }} pz
+                    </span>
+                    <span class="text-gray-300 text-xs">({{ mb.units }} uds)</span>
+
+                  </div>
+                </div>
+                {% endfor %}
+              </div>
+              {% else %}
+              <span class="text-gray-300 text-xs">No data</span>
+              {% endif %}
+            {% else %}
+              <span class="text-gray-300 text-xs mono">1 : 1</span>
+            {% endif %}
+          </td>
+
+          {# Hours progress bar #}
+          <td class="px-4 py-3">
+            <div class="flex items-center gap-2">
+              <div class="flex-1 bg-gray-100 rounded-full h-1.5 min-w-16">
+                <div class="bg-emerald-500 h-1.5 rounded-full transition-all" style="width: {{ s.pct }}%"></div>
+              </div>
+              <span class="text-xs mono text-gray-500 w-12 text-right shrink-0">
+                {{ s.done_hours }}/{{ s.total_hours }}h
+              </span>
+            </div>
+          </td>
+
+          {# Overtime indicator — Yes/No badge; hover lists the OT models #}
+          <td class="px-4 py-3 text-center">
+            {% if item.has_overtime %}
+            <span class="inline-flex items-center gap-1 rounded-full bg-amber-50 border border-amber-200
+                         px-2.5 py-0.5 text-[11px] font-semibold text-amber-700"
+                  title="Overtime models: {{ item.ot_models|join:", " }}">
+              <i class="fas fa-business-time text-[10px]"></i> Yes
+            </span>
+            {% else %}
+            <span class="inline-flex items-center gap-1 rounded-full bg-gray-50 border border-gray-200
+                         px-2.5 py-0.5 text-[11px] font-medium text-gray-500">
+              No
+            </span>
+            {% endif %}
+          </td>
+
+          <td class="px-4 py-3 text-right">
+            <a href="{% url 'production:execution_enter' plan.id %}"
+               class="inline-flex items-center gap-1.5 text-xs font-semibold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 px-3 py-1.5 rounded-lg transition">
+              <i class="fas fa-play text-xs"></i> Enter
+            </a>
+          </td>
+        </tr>
+        {% endwith %}
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  {% else %}
+  <div class="flex flex-col items-center py-16 text-center">
+    <div class="w-12 h-12 rounded-full bg-gray-100 flex items-center justify-center mb-3">
+      {% if filter.date_from or filter.date_to or filter.work_center or filter.shift or filter.overtime %}
+        <i class="fas fa-filter text-gray-300 text-xl"></i>
+      {% else %}
+        <i class="fas fa-play-circle text-gray-300 text-xl"></i>
+      {% endif %}
+    </div>
+    {% if filter.date_from or filter.date_to or filter.work_center or filter.shift or filter.overtime %}
+      <p class="text-sm text-gray-400">No results for the applied filters.</p>
+      <a href="{% url 'production:execution_list' %}"
+         class="mt-3 text-sm text-blue-600 hover:underline font-medium">
+        View all plans →
+      </a>
+    {% else %}
+      <p class="text-sm text-gray-400">No plans available.</p>
+      <a href="{% url 'planning:daily_plan_create' %}"
+         class="mt-3 text-sm text-blue-600 hover:underline font-medium">
+        Create a daily plan first →
+      </a>
+    {% endif %}
+  </div>
+  {% endif %}
+</div>
+
+
+<script>
+// ── Dependent filter: Work Center → Subprocess ──────────────────────────────
+// The subprocess list is filtered client-side from data already in the DOM, so
+// changing Work Center costs no request and cannot produce an invalid pair.
+(function () {
+  const wcSel = document.querySelector('select[name="wc"], select[name="work_center"]');
+  const spSel = document.querySelector('select[name="subprocess"]');
+  if (!wcSel || !spSel) return;
+
+  // Remember every option once, with the work center it belongs to.
+  const all = Array.from(spSel.options).map(o => ({
+    value: o.value, text: o.textContent.trim(), wc: o.dataset.wc || "",
+  }));
+
+  function refresh(keepValue) {
+    const wc = wcSel.value;
+    const wanted = keepValue !== undefined ? keepValue : spSel.value;
+    spSel.innerHTML = "";
+    all.filter(o => !o.value || !wc || o.wc === wc).forEach(o => {
+      const opt = document.createElement("option");
+      opt.value = o.value;
+      opt.textContent = o.text;
+      if (o.wc) opt.dataset.wc = o.wc;
+      spSel.appendChild(opt);
+    });
+    // Keep the current subprocess only if it still belongs to the work center.
+    const stillValid = Array.from(spSel.options).some(o => o.value === wanted);
+    spSel.value = stillValid ? wanted : "";
+  }
+
+  wcSel.addEventListener("change", () => refresh(""));
+  refresh();   // apply on load so a bookmarked URL shows a coherent list
+})();
+</script>
+{% endblock %}

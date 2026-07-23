@@ -1,0 +1,28 @@
+{# Reusable KPI card. Params: label, value, suffix, icon, tone, help #}
+{# `help` is optional: when provided, an info icon appears next to the label and #}
+{# the whole card exposes the explanation on hover (native tooltip + styled popup). #}
+<div class="group relative bg-white rounded-xl border border-slate-200 p-4 flex flex-col gap-1
+            {% if help %}cursor-help hover:border-slate-300 transition-colors{% endif %}"
+     {% if help %}title="{{ help }}"{% endif %}>
+  <div class="flex items-center justify-between">
+    <span class="text-[11px] font-semibold uppercase tracking-wide text-slate-500 flex items-center gap-1">
+      {{ label }}
+      {% if help %}<i class="fas fa-circle-info text-[9px] text-slate-300 group-hover:text-slate-400"></i>{% endif %}
+    </span>
+    <i class="fas {{ icon }} text-{{ tone }}-500"></i>
+  </div>
+  <span class="text-2xl font-bold text-slate-800 mono">
+    {% if value is None %}—{% else %}{{ value }}{{ suffix }}{% endif %}
+  </span>
+
+  {% if help %}
+  {# Styled tooltip — appears above the card on hover. #}
+  <div class="pointer-events-none absolute left-0 bottom-full mb-2 z-30 w-64
+              opacity-0 group-hover:opacity-100 transition-opacity duration-150">
+    <div class="rounded-lg bg-slate-800 text-white text-[11px] leading-snug px-3 py-2 shadow-xl">
+      {{ help }}
+      <div class="absolute left-6 top-full -mt-1 w-2 h-2 rotate-45 bg-slate-800"></div>
+    </div>
+  </div>
+  {% endif %}
+</div>
