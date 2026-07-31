@@ -356,4 +356,4 @@ python manage.py check --deploy
 ---
 
 *Documento de referencia técnica — generado a partir del código fuente del
-proyecto MTE Hora×Hora.* 7/31/2026:)JG
+proyecto MTE Hora×Hora.* 7/31/2026:) -JG
