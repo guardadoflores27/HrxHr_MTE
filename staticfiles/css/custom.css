@@ -1,0 +1,18 @@
+/* Estilos adicionales que Tailwind CDN no cubre */
+
+/* Scrollbar sutil */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: #f1f5f9; }
+::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+
+/* Inputs de Django con clases de Tailwind */
+input[type="text"],
+input[type="number"],
+input[type="date"],
+input[type="time"],
+select,
+textarea {
+    @apply w-full rounded-lg border-gray-300 text-sm shadow-sm
+           focus:border-blue-500 focus:ring-blue-500;
+}
