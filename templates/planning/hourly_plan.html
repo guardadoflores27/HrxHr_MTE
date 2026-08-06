@@ -283,8 +283,6 @@
           <span class="text-[10px] text-gray-400 ml-1 row-hc">HC: {{ hp.effective_headcount }}</span>
 
           {% if can_write %}
-          {# Any hour can be edited or deleted; deletion is blocked server-side
-             when the hour already holds captured execution. #}
           <button type="button"
                   onclick="openEditModal({{ hp.id }}, '{{ hp.model.name }}', {{ hp.model.id }}, {{ hp.planned_quantity }}, {{ hp.effective_headcount }}, '{{ hp.comments|escapejs }}')"
                   class="text-blue-400 hover:text-blue-600
