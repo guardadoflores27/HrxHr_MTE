@@ -5,23 +5,26 @@ from django.dispatch import receiver
 
 
 class UserProfile(models.Model):
-    ROLE_LEADER   = "leader"
-    ROLE_OPERATOR = "operator"
-    ROLE_ENGINEER = "engineer"
-    ROLE_ADMIN    = "admin"
+    ROLE_LEADER     = "leader"
+    ROLE_OPERATOR   = "operator"
+    ROLE_ENGINEER   = "engineer"
+    ROLE_SUPERVISOR = "supervisor"
+    ROLE_ADMIN      = "admin"
 
     ROLE_CHOICES = [
-        (ROLE_LEADER,   "Leader"),
-        (ROLE_OPERATOR, "Operator"),
-        (ROLE_ENGINEER, "Engineer"),
-        (ROLE_ADMIN,    "Admin"),
+        (ROLE_LEADER,     "Leader"),
+        (ROLE_OPERATOR,   "Operator"),
+        (ROLE_ENGINEER,   "Engineer"),
+        (ROLE_SUPERVISOR, "Supervisor"),
+        (ROLE_ADMIN,      "Admin"),
     ]
 
     ROLE_COLORS = {
-        ROLE_LEADER:   ("bg-emerald-500", "Leader"),
-        ROLE_OPERATOR: ("bg-blue-500",    "Operator"),
-        ROLE_ENGINEER: ("bg-violet-500",  "Engineer"),
-        ROLE_ADMIN:    ("bg-rose-500",    "Admin"),
+        ROLE_LEADER:     ("bg-emerald-500", "Leader"),
+        ROLE_OPERATOR:   ("bg-blue-500",    "Operator"),
+        ROLE_ENGINEER:   ("bg-violet-500",  "Engineer"),
+        ROLE_SUPERVISOR: ("bg-amber-500", "Supervisor"),
+        ROLE_ADMIN:      ("bg-rose-500",    "Admin"),
     }
 
     user = models.OneToOneField(User, on_delete=models.CASCADE, related_name="profile")
@@ -50,6 +53,10 @@ class UserProfile(models.Model):
     @property
     def is_engineer(self):
         return self.role == self.ROLE_ENGINEER
+
+    @property
+    def is_supervisor(self):
+        return self.role == self.ROLE_SUPERVISOR
 
     @property
     def is_admin(self):

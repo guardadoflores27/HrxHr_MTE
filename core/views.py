@@ -9,7 +9,7 @@ from django.contrib import messages
 
 from .models import WorkCenter, SubProcess, SubProcessType, Shift
 from .forms  import WorkCenterForm, SubProcessForm, SubProcessTypeForm, ShiftForm
-from users.decorators import admin_or_engineer, role_required
+from users.decorators import admin_or_engineer, admin_engineer_or_supervisor, role_required
 
 
 def _role(request):
@@ -219,10 +219,10 @@ def sp_delete(request, pk):
     return render(request, "core/confirm_delete.html", {"obj": sp, "back_url": "core:sp_list"})
 
 
-# ── Shift — admin & engineer only ─────────────────────────────────────────────
+# ── Shift — admin, engineer & supervisor only ─────────────────────────────────────────────
 
 @login_required
-@admin_or_engineer
+@admin_engineer_or_supervisor
 def shift_list(request):
     search = request.GET.get("q", "").strip()
     status = request.GET.get("status", "").strip()
@@ -246,7 +246,7 @@ def shift_list(request):
 
 
 @login_required
-@admin_or_engineer
+@admin_engineer_or_supervisor
 def shift_create(request):
     form = ShiftForm(request.POST or None)
     if request.method == "POST" and form.is_valid():
@@ -257,7 +257,7 @@ def shift_create(request):
 
 
 @login_required
-@admin_or_engineer
+@admin_engineer_or_supervisor
 def shift_update(request, pk):
     shift = get_object_or_404(Shift, pk=pk)
     form  = ShiftForm(request.POST or None, instance=shift)
@@ -270,7 +270,7 @@ def shift_update(request, pk):
 
 
 @login_required
-@admin_or_engineer
+@admin_engineer_or_supervisor
 def shift_delete(request, pk):
     shift = get_object_or_404(Shift, pk=pk)
 
