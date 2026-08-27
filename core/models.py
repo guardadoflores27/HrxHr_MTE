@@ -11,8 +11,22 @@ class AuditMixin(models.Model):
                                    related_name='+', verbose_name="Created by")
     updated_by = models.ForeignKey(User, null=True, blank=True, on_delete=models.SET_NULL,
                                    related_name='+', verbose_name="Updated by")
+    # Name snapshots — survive the user being deleted later (same pattern as
+    # planning.DailyPlan.created_by_name / operator_name). NOTE: as of today
+    # nothing in core/views.py  actually sets created_by/updated_by yet, so
+    # this is preventive: whenever that gets wired up, the snapshot will
+    # already be correct without anyone having to remember to set it.
+    created_by_name = models.CharField(max_length=150, blank=True)
+    updated_by_name = models.CharField(max_length=150, blank=True)
     created_at = models.DateTimeField(default=timezone.now)
     updated_at = models.DateTimeField(default=timezone.now)
+
+    def save(self, *args, **kwargs):
+        if self.created_by_id and not self.created_by_name:
+            self.created_by_name = self.created_by.get_full_name() or self.created_by.username
+        if self.updated_by_id:
+            self.updated_by_name = self.updated_by.get_full_name() or self.updated_by.username
+        super().save(*args, **kwargs)
 
     class Meta:
         abstract = True

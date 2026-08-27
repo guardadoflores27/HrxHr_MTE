@@ -21,6 +21,7 @@
         {% if target.profile.role == 'admin' %}bg-rose-500
         {% elif target.profile.role == 'leader' %}bg-emerald-500
         {% elif target.profile.role == 'engineer' %}bg-violet-500
+        {% elif target.profile.role == 'supervisor' %}bg-amber-500  
         {% else %}bg-blue-500{% endif %}">
         {{ target.username|first|upper }}
       </div>
@@ -31,6 +32,7 @@
           {% if target.profile.role == 'admin' %}bg-rose-100 text-rose-700
           {% elif target.profile.role == 'leader' %}bg-emerald-100 text-emerald-700
           {% elif target.profile.role == 'engineer' %}bg-violet-100 text-violet-700
+          {% elif target.profile.role == 'supervisor' %}bg-amber-100 text-amber-700
           {% else %}bg-blue-100 text-blue-700{% endif %}">
           {{ target.profile.get_role_display }}
         </span>
@@ -54,11 +56,12 @@
 
     <div class="px-6 py-5 space-y-4">
       <p class="text-sm text-gray-700">
-        You are about to permanently delete the account <strong class="text-gray-900">{{ target.username }}</strong>.
-        All data associated with this account will be removed.
+        You are about to permanently delete the login account <strong class="text-gray-900">{{ target.username }}</strong>.
+        This cannot be undone and they will no longer be able to log in.
       </p>
 
       <div class="rounded-lg bg-gray-50 border border-gray-200 px-4 py-3 text-xs text-gray-600 space-y-1">
+        <p><i class="fas fa-shield-halved text-emerald-500 mr-1"></i><strong>Their production history is safe. </strong>Daily Plans, Hourly Plans, and headcount changes they created or operated keep their name as plain text and are not deleted or altered.</p>
         <p><i class="fas fa-circle-info text-blue-400 mr-1"></i>If this user needs a <strong>new password</strong>, deleting and recreating the account is the correct procedure.</p>
         <p><i class="fas fa-circle-info text-blue-400 mr-1"></i>To change only the <strong>role</strong>, go back and use the Edit Role option instead.</p>
       </div>
