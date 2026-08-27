@@ -31,7 +31,10 @@ class UserProfile(models.Model):
     role = models.CharField(max_length=20, choices=ROLE_CHOICES, default=ROLE_OPERATOR)
     date_of_birth = models.DateField(
         null=True, blank=True,
-        help_text="Used to generate the default password (Name + birth year).",
+    )
+    employee_number = models.CharField(
+        max_length=20, null=True, blank=True, unique=True,
+        help_text="Used to generate default password (Name + Employee Number).",
     )
 
     def __str__(self):

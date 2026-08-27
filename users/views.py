@@ -46,7 +46,14 @@ def user_create(request):
     form = CreateUserForm(request.POST or None)
     if request.method == "POST" and form.is_valid():
         user = form.save()
-        messages.success(request, f"User '{user.username}' created successfully.")
+        if form.generated_password:
+            messages.success(
+                request,
+                f"User '{user.username}' created. Default password: {form.generated_password} "
+                f"— share it with the employee now, it won't be shown again."
+            )
+        else:
+            messages.success(request, f"User '{user.username}' created successfully.")
         return redirect("users:user_list")
     return render(request, "users/user_create.html", {"form": form})
 
