@@ -23,12 +23,16 @@ class UserProfile(models.Model):
         ROLE_LEADER:     ("bg-emerald-500", "Leader"),
         ROLE_OPERATOR:   ("bg-blue-500",    "Operator"),
         ROLE_ENGINEER:   ("bg-violet-500",  "Engineer"),
-        ROLE_SUPERVISOR: ("bg-amber-500", "Supervisor"),
+        ROLE_SUPERVISOR: ("bg-amber-500",   "Supervisor"),
         ROLE_ADMIN:      ("bg-rose-500",    "Admin"),
     }
 
     user = models.OneToOneField(User, on_delete=models.CASCADE, related_name="profile")
     role = models.CharField(max_length=20, choices=ROLE_CHOICES, default=ROLE_OPERATOR)
+    date_of_birth = models.DateField(
+        null=True, blank=True,
+        help_text="Used to generate the default password (Name + birth year).",
+    )
 
     def __str__(self):
         return f"{self.user.username} ({self.get_role_display()})"

@@ -19,6 +19,11 @@ class CreateUserForm(UserCreationForm):
                                   widget=forms.EmailInput(attrs={"class": _input}))
     role       = forms.ChoiceField(choices=UserProfile.ROLE_CHOICES,
                                    widget=forms.Select(attrs={"class": _select}))
+    date_of_birth = forms.DateField(
+        required=False,
+        widget=forms.DateInput(attrs={"class": _input, "type": "date"}),
+        help_text="Needed to generate the default password (Name + birth year).",
+    )
 
     class Meta:
         model  = User
@@ -39,7 +44,8 @@ class CreateUserForm(UserCreationForm):
         if commit:
             user.save()
             profile, _ = UserProfile.objects.get_or_create(user=user)
-            profile.role = self.cleaned_data["role"]
+            profile.role          = self.cleaned_data["role"]
+            profile.date_of_birth = self.cleaned_data.get("date_of_birth")
             profile.save()
         return user
 

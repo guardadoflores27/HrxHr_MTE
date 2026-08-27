@@ -37,6 +37,11 @@ class DailyPlan(models.Model):
         related_name="operated_daily_plans",
         help_text="Operator running this line for the shift.",
     )
+    # Snapshot of the operator's display name, kept in sync on every save()
+    # while `operator` is set. Survives user deletion (operator goes NULL, 
+    # operator_name keeps the last known value) — same pattern as
+    # created_by_name/updated_by_name below.
+    operator_name = models.CharField(max_length=150, blank=True)
 
     # Audit — FK goes NULL on user delete; *_name snapshots survive deletion
     created_by      = models.ForeignKey(
@@ -59,6 +64,15 @@ class DailyPlan(models.Model):
     @property
     def updater_display(self):
         return self.updated_by.username if self.updated_by else (self.updated_by_name or "—")
+
+    @property
+    def operator_display(self):
+        return self.operator.username if self.operator else (self.operator_name or "—")
+
+    def save(self, *args, **kwargs):
+        if self.operator_id:
+            self.operator_name = self.operator.get_full_name() or self.operator.username
+        super().save(*args, **kwargs)
 
     def __str__(self):
         shift_label = self.shift.name if self.shift else "—"
@@ -94,6 +108,17 @@ class HourlyPlan(models.Model):
         related_name="operated_hours",
         help_text="Overrides the shift operator for this hour only.",
     )
+    # Same survives-deletion snapshot pattern as DailyPlan.operator_name.
+    operator_name    = models.CharField(max_length=150, blank=True)
+
+    @property
+    def operator_display(self):
+        return self.operator.username if self.operator else (self.operator_name or "—")
+
+    def save(self, *args, **kwargs):
+        if self.operator_id:
+            self.operator_name = self.operator.get_full_name() or self.operator.username
+        super().save(*args, **kwargs)
 
     def effective_headcount(self):
         return self.headcount if self.headcount is not None else self.daily_plan.headcount
@@ -102,6 +127,11 @@ class HourlyPlan(models.Model):
     def effective_operator(self):
         """Per-hour operator if set, otherwise the shift-level operator."""
         return self.operator or self.daily_plan.operator
+
+    @property
+    def effective_operator_display(self):
+        """Same fallback as effective_operator, but survives user deletion."""
+        return self.operator_display if self.operator_id else self.daily_plan.operator_display
 
     @property
     def hour_end(self):
