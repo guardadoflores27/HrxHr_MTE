@@ -223,8 +223,8 @@
         <i class="fas fa-cubes icon"></i><span class="sidebar-label">Models</span>
       </a>
 
-      {# ── Shists: only admin and engineer ─────────────────────────────── #}
-      {% if user.is_authenticated and user.profile.role in 'admin,engineer' %}
+      {# ── Shifts: only admin, engineer & supervisor ─────────────────────────────── #}
+      {% if user.is_authenticated and user.profile.role in 'admin,engineer,supervisor' %}
       <a title="Shifts" href="{% url 'core:shift_list' %}"
          class="nav-item {% if 'shift_' in request.resolver_match.url_name %}active{% endif %}">
         <i class="fas fa-business-time icon"></i><span class="sidebar-label">Shifts</span>

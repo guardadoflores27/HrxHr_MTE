@@ -219,7 +219,7 @@
 
             No active shifts available.
 
-            {% if user.profile.role in 'admin,engineer' %}
+            {% if user.profile.role in 'admin,engineer,supervisor' %}
             <a href="{% url 'core:shift_create' %}"
                class="underline font-medium">
               Create one

@@ -13,6 +13,7 @@ from planning.services import format_blocks_summary, blocks_categories_joined
 from core.models import WorkCenter, Shift, SubProcess
 from .models import HourlyExecution, ExecutionLossReason, EventType, LossReason
 from .forms import HourlyExecutionForm, ExecutionEventFormSet
+from users.decorators import not_operator_write
 
 
 def _build_plan_stats(plan):
@@ -139,6 +140,7 @@ def execution_list(request):
 
 
 @login_required
+@not_operator_write
 def execution_enter(request, plan_id):
     plan  = get_object_or_404(DailyPlan, id=plan_id)
     hours = HourlyPlan.objects.filter(

@@ -138,16 +138,16 @@ def daily_plan_list(request):
         "filter":       {"date_from": date_from, "date_to": date_to,
                          "work_center": wc_id, "subprocess": sp_id,
                          "shift": shift_id},
-        "can_write":    _role(request) in {"leader", "admin"},
-        "can_delete_plan": _role(request) in {"leader", "admin"},
+        "can_write":    _role(request) in {"leader", "admin", "supervisor"},
+        "can_delete_plan": _role(request) in {"leader", "admin", "supervisor"},
     })
 
 
 @login_required
 @not_operator_write
 def daily_plan_create(request):
-    if _role(request) not in {"leader", "admin"}:
-        messages.error(request, "Only Leaders and Admins can create plans.")
+    if _role(request) not in {"leader", "admin", "supervisor"}:
+        messages.error(request, "Only Leaders, Supervisors, and Admins can create plans.")
         return redirect("planning:daily_plan_list")
     active_shifts = Shift.objects.filter(is_active=True).order_by("start_time")
     form = DailyPlanForm(request.POST or None)
@@ -167,8 +167,8 @@ def daily_plan_create(request):
 @login_required
 @not_operator_write
 def daily_plan_update(request, pk):
-    if _role(request) not in {"leader", "admin"}:
-        messages.error(request, "Only Leaders and Admins can edit plans.")
+    if _role(request) not in {"leader", "admin", "supervisor"}:
+        messages.error(request, "Only Leaders, Supervisors, and Admins can edit plans.")
         return redirect("planning:daily_plan_list")
     plan          = get_object_or_404(DailyPlan, pk=pk)
     active_shifts = Shift.objects.filter(is_active=True).order_by("start_time")
@@ -186,8 +186,8 @@ def daily_plan_update(request, pk):
 
 @login_required
 def daily_plan_delete(request, pk):
-    if _role(request) not in {"leader", "admin"}:
-        messages.error(request, "Only Leaders and Admins can delete plans.")
+    if _role(request) not in {"leader", "admin", "supervisor"}:
+        messages.error(request, "Only Leaders, Supervisors, and Admins can delete plans.")
         return redirect("planning:daily_plan_list")
     plan = get_object_or_404(DailyPlan, pk=pk)
     if request.method == "POST":
@@ -238,7 +238,7 @@ def hourly_plan_view(request, plan_id):
         "can_blocks":    b_ok,
         "can_hc":        hc_ok,
         "can_delete":    del_ok,
-        "can_add_model": _role(request) in {"leader", "admin"},
+        "can_add_model": _role(request) in {"leader", "admin", "supervisor"},
     })
 
 
@@ -701,8 +701,8 @@ def hourly_plan_board(request):
         "filter":          {"work_center": wc_id, "subprocess": sp_id,
                             "date": date_f, "shift": shift_id,
                             "overtime": only_ot},
-        "can_write":       _role(request) in {"leader", "admin"},
-        "can_delete_plan": _role(request) in {"leader", "admin"},
+        "can_write":       _role(request) in {"leader", "admin", "supervisor"},
+        "can_delete_plan": _role(request) in {"leader", "admin", "supervisor"},
     })
 
 
@@ -713,7 +713,7 @@ def hourly_plan_board(request):
 @login_required
 def model_list(request):
     search    = request.GET.get("q", "").strip()
-    can_write = _role(request) in {"leader", "admin", "engineer"}
+    can_write = _role(request) in {"leader", "admin", "supervisor"}
     from django.db.models import Count
     models_qs = Model.objects.annotate(hourly_count=Count("hourlyplan")).order_by("name")
     if search:
@@ -766,7 +766,7 @@ def model_list(request):
 
 @login_required
 def model_delete(request, pk):
-    if _role(request) not in {"leader", "admin", "engineer"}:
+    if _role(request) not in {"leader", "admin", "supervisor"}:
         return JsonResponse({"ok": False, "error": "Permission denied."}, status=403)
     model = get_object_or_404(Model, pk=pk)
     blocking = DailyPlan.objects.filter(
@@ -806,5 +806,5 @@ def api_model_search(request):
     models = Model.objects.filter(name__icontains=q).order_by("name")[:20]
     return JsonResponse({
         "models":        [{"id": m.id, "name": m.name} for m in models],
-        "can_add_model": _role(request) in {"leader", "engineer", "admin"},
+        "can_add_model": _role(request) in {"leader", "supervisor", "admin"},
     })

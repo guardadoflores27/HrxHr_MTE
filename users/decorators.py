@@ -2,29 +2,34 @@
 """
 Role-based access decorators.
 
-Permission matrix (from spec):
-┌──────────────────────┬────────┬──────────┬──────────┬───────┐
-│ Section              │ Leader │ Operator │ Engineer │ Admin │
-├──────────────────────┼────────┼──────────┼──────────┼───────┤
-│ Dashboard            │ full   │ full     │ full     │ full  │
-│ Daily Plans          │ full   │ view     │ view     │ full  │
-│ Hourly Plans         │ full   │ view     │ view     │ full  │
-│ Execution            │ full   │ view     │ view     │ full  │
-│ Work Centers         │ view   │ view     │ full     │ full  │
-│ Subprocesses         │ view   │ view     │ full     │ full  │
-│ Models               │ full   │ view     │ view     │ full  │
-│ Shifts               │ view*  │ view*    │ full     │ full  │
-│ Users Administration │ view   │ view     │ view     │ full  │
-└──────────────────────┴────────┴──────────┴──────────┴───────┘
+Permission matrix (supersedes the original 4-role spec; Supervisor is
+a new role, equivalent to Leader but with full control over Shifts as well):
 
-* Leader & Operator: can VIEW shifts (used in Daily Plans) but
-  the sidebar link is hidden from them and they cannot access
-  the admin pages directly (decorator blocks them).
+┌──────────────────────┬────────┬──────────┬──────────┬────────────┬───────┐
+│ Section              │ Leader │ Operator │ Engineer │ Supervisor │ Admin │
+├──────────────────────┼────────┼──────────┼──────────┼────────────┼───────┤
+│ Dashboard            │ full   │ full     │ full     │ full       │ full  │
+│ Daily Plans          │ full   │ view     │ view     │ full       │ full  │
+│ Hourly Plans         │ full   │ view     │ view     │ full       │ full  │
+│ Execution            │ full   │ view     │ view     │ full       │ full  │
+│ Work Centers         │ view   │ view     │ full     │ view       │ full  │
+│ Subprocesses         │ view   │ view     │ full     │ view       │ full  │
+│ Models               │ full   │ view     │ view     │ full       │ full  │
+│ Shifts               │ view*  │ view*    │ full     │ full       │ full  │
+│ Users Administration │ view   │ view     │ view     │ view       │ full  │
+└──────────────────────┴────────┴──────────┴──────────┴────────────┴───────┘
+
+* Leader, Operator & Supervisor: can VIEW shifts (used in Daily Plans);
+  for Leader/Operator the sidebar link to the Shifts admin screen is
+  hidden and the admin pages themselves are blocked. Supervisor gets
+  full access to the Shifts admin screen itself (see
+  `admin_engineer_or_supervisor` below).
 """
 
 from functools import wraps
 from django.shortcuts import redirect
 from django.contrib import messages
+from django.http import JsonResponse
 
 
 def _get_profile(request):
@@ -35,6 +40,10 @@ def _get_profile(request):
 
 
 def _deny(request, msg="You don't have permission to perform this action."):
+    # AJAX callers (e.g. Execution's fetch-based save) need a JSON error,
+    # not a redirect — a redirect response breaks their response parsing.
+    if request.headers.get("X-Requested-With") == "XMLHttpRequest":
+        return JsonResponse({"ok": False, "error": msg}, status=403)
     messages.error(request, msg)
     return redirect("planning:dashboard")
 
@@ -76,6 +85,23 @@ def admin_or_engineer(view_func):
             return _deny(
                 request,
                 "Only Admins and Engineers can access this section."
+            )
+        return view_func(request, *args, **kwargs)
+    return _wrapped
+
+def admin_engineer_or_supervisor(view_func):
+    """
+    Allow admin, engineer, or supervisor.
+    Used for: Shift management only (Work Centers/Subprocesses stay
+    admin_or_engineer — Supervisor has view-only there, per the matrix).
+    """
+    @wraps(view_func)
+    def _wrapped(request, *args, **kwargs):
+        profile = _get_profile(request)
+        if profile is None or profile.role not in ("admin", "engineer", "supervisor"):
+            return _deny(
+                request,
+                "Only Admins, Engineers, and Supervisors can access this section."
             )
         return view_func(request, *args, **kwargs)
     return _wrapped

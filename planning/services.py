@@ -249,13 +249,15 @@ def get_user_role(user):
     return p.role if p else None
 
 def can_write(user):
-    return get_user_role(user) in {"leader", "admin", "engineer"}
+    # Engineer is intentionally NOT included: per the confirmed permission
+    # matrix, Engineer only has "view" on Hourly Plans
+    return get_user_role(user) in {"leader", "admin", "supervisor"}
 
 def can_move_blocks(user):
-    return get_user_role(user) in {"leader", "admin"}
+    return get_user_role(user) in {"leader", "admin", "supervisor"}
 
 def can_edit_headcount(user):
-    return get_user_role(user) in {"leader", "admin"}
+    return get_user_role(user) in {"leader", "admin", "supervisor"}
 
 def can_delete(user):
-    return get_user_role(user) in {"leader", "admin"}
+    return get_user_role(user) in {"leader", "admin", "supervisor"}
