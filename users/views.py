@@ -5,13 +5,27 @@ from django.contrib.auth.models import User
 from django.contrib import messages
 
 from .models import UserProfile
-from .forms  import CreateUserForm, EditUserForm
+from .forms  import CreateUserForm, EditUserForm, EditProfileForm
 from .decorators import admin_only
 
 
 @login_required
 def profile(request):
     return render(request, "users/profile.html")
+
+@login_required
+def profile_edit(request):
+    """
+    Self-service edit — operates on request.user directly (no pk in the
+    URL), so there's no way to reach another account's edit form by
+    changing an ID in the address bar.
+    """
+    form = EditProfileForm(request.POST or None, instance=request.user)
+    if request.method == "POST" and form.is_valid():
+        form.save()
+        messages.success(request, "Your profile has been updated.")
+        return redirect("users:profile")
+    return render(request, "users/profile_edit.html", {"form": form})
 
 
 # ── User list ─────────────────────────────────────────────────────────────────

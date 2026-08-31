@@ -2,6 +2,13 @@
 {% block title %}My Profile — MTE Hr×Hr{% endblock %}
 {% block page_title %}My Profile{% endblock %}
 
+{% block header_actions %}
+  <a href="{% url 'users:profile_edit' %}"
+     class="flex items-center gap-1.5 text-sm text-blue-600 hover:text-blue-800 font-medium transition">
+    <i class="fas fa-pen text-xs"></i> Edit Profile
+  </a>
+{% endblock %}
+
 {% block content %}
 <div class="max-w-lg mx-auto">
 
@@ -106,8 +113,8 @@
   <div class="mt-4 rounded-lg bg-amber-50 border border-amber-200 px-4 py-3 flex items-start gap-3">
     <i class="fas fa-circle-info text-amber-500 mt-0.5 flex-shrink-0"></i>
     <p class="text-sm text-amber-800">
-      To change your password or update account details, contact your <strong>Admin</strong>.
-      Password changes require deleting and recreating the account.
+      You can update your <strong>email and full name</strong> from the Edit Profile button above.
+      To change your <strong>password</strong> or <strong>username</strong>, contact your Admin.
     </p>
   </div>
 

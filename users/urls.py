@@ -12,6 +12,7 @@ urlpatterns = [
     ), name="login"),
     path("logout/", auth_views.LogoutView.as_view(), name="logout"),
     path("profile/", views.profile, name="profile"),
+    path("profile/edit/", views.profile_edit, name="profile_edit"),
 
     # Users Administration
     path("admin/users/",              views.user_list,      name="user_list"),

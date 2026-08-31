@@ -124,7 +124,27 @@ class CreateUserForm(UserCreationForm):
             profile.employee_number = employee_number or None
             profile.save()
         return user
+    
 
+class EditProfileForm(forms.ModelForm):
+    """
+    Self-service edit: any logged-in user can update their own contact
+    details. Deliberately excludes `role` (privilege escalation) and
+    `employee_number`/`date_of_birth` (employee_number in particular
+    drives the default password formula, so it stays admin-only via
+    CreateUserForm/EditUserForm rather than self-editable).
+    """
+    first_name = forms.CharField(max_length=50, required=False,
+                                     widget=forms.TextInput(attrs={"class": _input}))
+    last_name  = forms.CharField(max_length=50, required=False,
+                                     widget=forms.TextInput(attrs={"class": _input}))
+    email      = forms.EmailField(required=False,
+                                      widget=forms.EmailInput(attrs={"class": _input}))
+
+    class Meta:
+        model  = User
+        fields = ["first_name", "last_name", "email"]
+        
 
 class EditUserForm(forms.Form):
     """
