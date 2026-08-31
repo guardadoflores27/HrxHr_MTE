@@ -186,17 +186,35 @@ def daily_plan_update(request, pk):
 
 @login_required
 def daily_plan_delete(request, pk):
+    plan = get_object_or_404(DailyPlan, pk=pk)
+    execution_count = HourlyExecution.objects.filter(hourly_plan__daily_plan=plan).count()
+
     if _role(request) not in {"leader", "admin", "supervisor"}:
         messages.error(request, "Only Leaders, Supervisors, and Admins can delete plans.")
         return redirect("planning:daily_plan_list")
-    plan = get_object_or_404(DailyPlan, pk=pk)
+
+    # Deleting a Daily Plan cascades to every HourlyPlan, HourlyExecution,
+    # ExecutionEvent, HourlyPlanBlock and HeadcountAudit tied to that day —
+    # a much bigger blast radius than a single hour. Once real production
+    # has been captured anywhere in the plan, treat it as a "destructive"
+    # action and restrict it to Admin only, same rule as hourly_plan_delete.
+    if execution_count > 0 and _role(request) != "admin":
+        messages.error(
+            request,
+            "Only Admins can delete a plan that already has production captured."
+        )
+        return redirect("planning:daily_plan_list")
+    
     if request.method == "POST":
         plan.delete()
         messages.success(request, "Plan deleted.")
         if request.POST.get("next") == "board":
             return redirect("planning:hourly_plan_board")
         return redirect("planning:daily_plan_list")
-    return render(request, "planning/plan_confirm_delete.html", {"plan": plan})
+    return render(request, "planning/plan_confirm_delete.html", {
+        "plan": plan,
+        "execution_count": execution_count,
+    })
 
 
 # ─────────────────────────────────────────────────────────────────────────────

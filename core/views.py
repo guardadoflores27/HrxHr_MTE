@@ -66,12 +66,19 @@ def wc_update(request, pk):
 @admin_or_engineer
 def wc_delete(request, pk):
     wc = get_object_or_404(WorkCenter, pk=pk)
+    blocking = wc.dailyplan_set.select_related("subprocess", "shift").distinct()
+    if blocking.exists():
+        messages.error(
+            request,
+            f"Can't delete '{wc.name}': it's used by {blocking.count()} Daily Plan(s). "
+            f"Remove or reassign those first."
+        )
+        return redirect("core:wc_list")       
     if request.method == "POST":
         wc.delete()
         messages.success(request, "Work center deleted.")
         return redirect("core:wc_list")
     return render(request, "core/confirm_delete.html", {"obj": wc, "back_url": "core:wc_list"})
-
 
 # ── Subprocess Type — Admin only ───────────────────────────────────────────────
 
@@ -212,6 +219,16 @@ def sp_update(request, pk):
 @admin_or_engineer
 def sp_delete(request, pk):
     sp = get_object_or_404(SubProcess, pk=pk)
+    # Same reasoning as wc_delete above — Subprocess -> DailyPlan is also
+    # on_delete=CASCADE.
+    blocking = sp.dailyplan_set.select_related("work_center", "shift").distinct()
+    if blocking.exists():
+        messages.error(
+            request,
+            f"Can't delete '{sp.name}': it's used by {blocking.count()} Daily Plan(s). "
+            f"Remove or reassign those first."
+        )
+        return redirect("core:sp_list")
     if request.method == "POST":
         sp.delete()
         messages.success(request, "Subprocess deleted.")
