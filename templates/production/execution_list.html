@@ -208,6 +208,17 @@
                 {{ s.total_completed_pieces }} / {{ s.total_planned_pieces }}
               </span>
             {% endif %}
+            {% if s.adherence_pct is not None %}
+            <div class="mt-1">
+              <span class="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold
+                {% if s.adherence_pct >= 100 %}bg-emerald-100 text-emerald-700
+                {% elif s.adherence_pct >= 85 %}bg-amber-100 text-amber-700
+                {% else %}bg-red-100 text-red-700{% endif %}"
+                title="Plan Adherence — actual vs. planned pieces for the whole day">
+                {{ s.adherence_pct }}% adherence
+              </span>
+            </div>
+            {% endif %}
           </td>
 
           {# Units flow (CF > 1 only) #}

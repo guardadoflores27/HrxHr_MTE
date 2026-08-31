@@ -920,6 +920,7 @@ const EDIT_ROW_BASE    = "{% url 'planning:api_edit_row' plan.id 0 %}".replace("
 const DELETE_ROW_BASE  = "{% url 'planning:hourly_delete' plan.id 0 %}".replace("/0/delete/", "/");
 const CSRF             = "{{ csrf_token }}";
 const CAN_WRITE        = {{ can_write|yesno:"true,false" }};
+const IS_ADMIN         = {{ is_admin|yesno:"true,false" }};
 const CAN_ADD_MODEL    = {{ can_add_model|yesno:"true,false" }};
 const SHIFT            = {{ shift_json|safe }};
 
@@ -1287,6 +1288,13 @@ function deleteRow(hpId, btnEl, hourLabel, modelName) {
   const warnBox = document.getElementById("delete-row-warning");
   warnBox?.classList.add("hidden");
 
+  // Reset from any previous hour's admin-only lock before re-checking this one.
+  const confirmBtnReset = document.getElementById("delete-row-confirm");
+  if (confirmBtnReset) {
+    confirmBtnReset.disabled = false;
+    confirmBtnReset.classList.remove("opacity-50", "cursor-not-allowed");
+  }
+
   const modal = document.getElementById("delete-row-modal");
   modal?.classList.remove("hidden");
   modal?.classList.add("flex");
@@ -1301,12 +1309,27 @@ function deleteRow(hpId, btnEl, hourLabel, modelName) {
   .then(r => r.json())
   .then(data => {
     if (data && data.has_execution && warnBox) {
+      const effText = (data.efficiency_pct !== null && data.efficiency_pct !== undefined)
+        ?  ` Plan Adherence for this hour: <strong>${data.efficiency_pct}%</strong>.`
+        : "";
       warnBox.innerHTML =
         `<i class="fas fa-triangle-exclamation mr-1"></i>` +
         `This hour has execution captured (<strong>${data.actual_quantity}</strong> produced). ` +
-        `Deleting it will also permanently delete that production record, its ` +
+        effText +
+        ` Deleting it will also permanently delete that production record, its ` +
         `comments and its operational events.`;
       warnBox.classList.remove("hidden");
+    }
+
+    const confirmBtn = document.getElementById("delete-row-confirm");
+    if (data && data.admin_only && !IS_ADMIN && confirmBtn) {
+      confirmBtn.disabled = true;
+      confirmBtn.classList.add("opacity-50", "cursor-not-allowed");
+      const errorBox = document.getElementById("delete-row-error");
+      if (errorBox) {
+        errorBox.textContent = "Only Admins can delete an hour that already has production captured.";
+        errorBox.classList.remove("hidden");
+      }
     }
   })
   .catch(() => { /* pre-flight is advisory only; deletion still confirms */ });

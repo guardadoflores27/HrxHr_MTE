@@ -67,6 +67,14 @@ def _build_plan_stats(plan):
         "total_hours":            total_hp,
         "done_hours":             done_hp,
         "pct": int(done_hp / total_hp * 100) if total_hp else 0,
+        # Adherencia al Plan: how close actual production came to the plan
+        # for the WHOLE day, in the same pieces unit as total_completed/
+        # total_planned above (so it stays correct even when cf > 1).
+        # None when nothing was planned — there's nothing to be adherent to.
+        "adherence_pct": (
+            round(total_completed / planned_pieces * 100, 1)
+            if planned_pieces else None
+        ),
     }
 
 
