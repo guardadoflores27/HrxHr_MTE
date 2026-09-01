@@ -369,19 +369,35 @@ class ActualsPerModelTestCase(TestCase):
         loss_reason = LossReason.objects.create(name="Material shortage")
 
         url = reverse("production:execution_enter", args=[self.plan.id])
+        # ExecutionEventFormSet is an inline formset — Django requires its
+        # management-form fields (TOTAL_FORMS etc.) to be present in POST
+        # data for is_valid() to pass, even when submitting zero events.
+        # Missing here before (pre-existing gap): the
+        # formset silently failed validation, so execution_enter never
+        # reached the save() call for either row.
+        events_a_prefix = f"hp-{self.row_a.id}-events"
         data = {
             f"hp-{self.row_a.id}-actual_quantity": "75",
             f"hp-{self.row_a.id}-scrap_quantity": "0",
             f"hp-{self.row_a.id}-comments": "Falta de material",
             f"hp-{self.row_a.id}-loss_reasons": str(loss_reason.id),
+            f"{events_a_prefix}-TOTAL_FORMS": "0",
+            f"{events_a_prefix}-INITIAL_FORMS": "0",
+            f"{events_a_prefix}-MIN_NUM_FORMS": "0",
+            f"{events_a_prefix}-MAX_NUM_FORMS": "1000",
         }
         self.client.post(url, data=data)
 
+        events_b_prefix = f"hp-{self.row_b.id}-events"
         data2 = {
             f"hp-{self.row_b.id}-actual_quantity": "38",
             f"hp-{self.row_b.id}-scrap_quantity": "0",
             f"hp-{self.row_b.id}-comments": "Cambio de operador",
             f"hp-{self.row_b.id}-loss_reasons": str(loss_reason.id),
+            f"{events_b_prefix}-TOTAL_FORMS": "0",
+            f"{events_b_prefix}-INITIAL_FORMS": "0",
+            f"{events_b_prefix}-MIN_NUM_FORMS": "0",
+            f"{events_b_prefix}-MAX_NUM_FORMS": "1000",
         }
         self.client.post(url, data=data2)
 
@@ -653,11 +669,23 @@ class HourDeletionTestCase(TestCase):
         self.assertFalse(self._HP.objects.filter(id=hp.id).exists())
 
     def test_preflight_warns_about_captured_execution(self):
-        """A GET reports what would be lost so the modal can warn the user."""
+        """A GET reports what would be lost so the modal can warn the user.
+        Uses an Admin client: once an hour has captured execution, deleting
+        it is Admin-only — Leader/Supervisor get 403,
+        covered separately below by
+        test_leader_cannot_delete_hour_with_captured_execution."""
         from production.models import HourlyExecution
+        from django.contrib.auth.models import User as _U
+        from users.models import UserProfile as _UP
+        from django.test import Client
+        admin = _U.objects.create_user("hourdel_admin", password="pw")
+        _UP.objects.filter(user=admin).update(role="admin")
+        admin = _U.objects.get(pk=admin.pk)
+        admin_client = Client(); admin_client.force_login(admin)
+
         hp = self._hour(9, overtime=False)
         HourlyExecution.objects.create(hourly_plan=hp, actual_quantity=7)
-        r = self.client.get(
+        r = admin_client.get(
             f"/plans/{self.plan.id}/hours/{hp.id}/delete/", **self.AJAX)
         self.assertEqual(r.status_code, 200)
         self.assertTrue(r.json()["has_execution"])
@@ -666,16 +694,40 @@ class HourDeletionTestCase(TestCase):
         self.assertTrue(self._HP.objects.filter(id=hp.id).exists())
 
     def test_delete_cascades_to_execution(self):
-        """Confirming removes the hour AND its captured execution."""
+        """Confirming (as Admin) removes the hour AND its captured
+        execution. See docstring above — non-Admin roles are covered by
+        test_leader_cannot_delete_hour_with_captured_execution."""
         from production.models import HourlyExecution
+        from django.contrib.auth.models import User as _U
+        from users.models import UserProfile as _UP
+        from django.test import Client
+        admin = _U.objects.create_user("hourdel_admin2", password="pw")
+        _UP.objects.filter(user=admin).update(role="admin")
+        admin = _U.objects.get(pk=admin.pk)
+        admin_client = Client(); admin_client.force_login(admin)
+
         hp = self._hour(11, overtime=False)
         HourlyExecution.objects.create(hourly_plan=hp, actual_quantity=7)
-        r = self.client.post(
+        r = admin_client.post(
             f"/plans/{self.plan.id}/hours/{hp.id}/delete/", **self.AJAX)
         self.assertEqual(r.status_code, 200)
         self.assertEqual(r.json()["deleted_execution"], 7)
         self.assertFalse(self._HP.objects.filter(id=hp.id).exists())
         self.assertFalse(
+            HourlyExecution.objects.filter(hourly_plan_id=hp.id).exists())
+        
+    def test_leader_cannot_delete_hour_with_captured_execution(self):
+        """Leader has full write on Hourly Plans in general, but once an
+        hour has real production captured, deleting it is Admin-only
+        (2026-08 decision, same rule as Daily Plans)."""
+        from production.models import HourlyExecution
+        hp = self._hour(13, overtime=False)
+        HourlyExecution.objects.create(hourly_plan=hp, actual_quantity=5)
+        r = self.client.post(
+            f"/plans/{self.plan.id}/hours/{hp.id}/delete/", **self.AJAX)
+        self.assertEqual(r.status_code, 403)
+        self.assertTrue(self._HP.objects.filter(id=hp.id).exists())
+        self.assertTrue(
             HourlyExecution.objects.filter(hourly_plan_id=hp.id).exists())
 
     def test_operator_cannot_delete_hours(self):

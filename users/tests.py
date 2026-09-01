@@ -2,12 +2,12 @@
 
 Locks in the matrix documented in users/decorators.py:
 
-  Section        | Leader | Operator | Engineer | Admin
-  Daily Plans    | full   | view     | view     | full
-  Work Centers   | view   | view     | full     | full
-  Subprocesses   | view   | view     | full     | full
-  Shifts         | view   | view     | full     | full
-  Users Admin    | view   | view     | view     | full
+  Section        | Leader | Operator | Engineer | Supervisor | Admin
+  Daily Plans    | full   | view     | view     | full       | full
+  Work Centers   | view   | view     | full     | view       | full
+  Subprocesses   | view   | view     | full     | view       | full
+  Shifts         | view   | view     | full     | full       | full
+  Users Admin    | view   | view     | view     | view       | full
 
 These tests exercise real HTTP requests and assert against the DATABASE, so a
 regression in either the view guards or the templates is caught.
@@ -19,9 +19,10 @@ from django.contrib.auth.models import User
 
 from users.models import UserProfile
 from core.models import WorkCenter, SubProcess, SubProcessType, Shift
-from planning.models import DailyPlan
+from planning.models import DailyPlan, HourlyPlan, Model as PlanningModel
+from production.models import HourlyExecution
 
-ROLES = ["leader", "operator", "engineer", "admin"]
+ROLES = ["leader", "operator", "engineer", "supervisor", "admin"]
 
 
 class RolePermissionMatrixTestCase(TestCase):
@@ -42,6 +43,7 @@ class RolePermissionMatrixTestCase(TestCase):
         self.shift = Shift.objects.create(
             name="ROLE", code="RL",
             start_time=dt.time(6), end_time=dt.time(14), is_active=True)
+        self.model = PlanningModel.objects.create(name="MODEL-ROLE")
 
     def _client(self, role):
         c = Client()
@@ -58,23 +60,39 @@ class RolePermissionMatrixTestCase(TestCase):
         for role in ROLES:
             self.assertEqual(self.users[role].profile.role, role)
 
-    # ── Daily Plans: Leader + Admin may write, others may not ────────────
-    def test_only_leader_and_admin_can_delete_plans(self):
+    # ── Daily Plans, nothing executed yet: Leader/Supervisor/Admin may write ────────────
+    def test_only_leader_supervisor_admin_can_delete_plans_without_execution(self):
         for role in ROLES:
             plan = self._make_plan()
             self._client(role).post(f"/plans/{plan.id}/delete/")
             deleted = not DailyPlan.objects.filter(id=plan.id).exists()
             self.assertEqual(
-                deleted, role in ("leader", "admin"),
-                f"{role} delete permission is wrong")
+                deleted, role in ("leader", "supervisor", "admin"),
+                f"{role} delete permission (no execution) is wrong")
             DailyPlan.objects.filter(id=plan.id).delete()
 
-    def test_only_leader_and_admin_can_open_plan_create(self):
+    # ── Daily Plans WITH execution captured ── #
+    def test_only_admin_can_delete_plans_with_execution_captured(self):
+        for role in ROLES:
+            plan = self._make_plan()
+            hp = HourlyPlan.objects.create(
+                daily_plan=plan, hour=dt.time(8), model=self.model,
+                planned_quantity=10)
+            HourlyExecution.objects.create(hourly_plan=hp, actual_quantity=8)
+    
+            self._client(role).post(f"/plans/{plan.id}/delete/")
+            deleted = not DailyPlan.objects.filter(id=plan.id).exists()
+            self.assertEqual(
+                deleted, role == "admin",
+                f"{role} must not be able to delete a plan with captured production")
+            DailyPlan.objects.filter(id=plan.id).delete()
+
+    def test_only_leader_supervisor_admin_can_open_plan_create(self):
         for role in ROLES:
             r = self._client(role).get("/plans/new/")
             allowed = r.status_code == 200
             self.assertEqual(
-                allowed, role in ("leader", "admin"),
+                allowed, role in ("leader", "supervisor", "admin"),
                 f"{role} create-page access is wrong")
 
     # ── Catalogs: Engineer + Admin only (this was a real security hole) ──
@@ -97,12 +115,12 @@ class RolePermissionMatrixTestCase(TestCase):
                 allowed, role in ("engineer", "admin"),
                 f"{role} subprocess write access is wrong")
 
-    def test_only_engineer_and_admin_can_manage_shifts(self):
+    def test_only_engineer_supervisor_and_admin_can_manage_shifts(self):
         for role in ROLES:
             r = self._client(role).get("/core/shifts/new/")
             allowed = r.status_code == 200
             self.assertEqual(
-                allowed, role in ("engineer", "admin"),
+                allowed, role in ("engineer", "supervisor", "admin"),
                 f"{role} shift management access is wrong")
 
     # ── User administration: Admin only for writes ───────────────────────
@@ -129,8 +147,9 @@ class RolePermissionMatrixTestCase(TestCase):
                 f"{role} should{'' if role in ('operator','engineer') else ' not'} "
                 f"see a disabled New Plan button")
 
-    # ── The phantom "supervisor" role must never come back ───────────────
-    def test_no_phantom_supervisor_role(self):
+    # ── Supervisor is now an official role ───────────────
+    def test_role_choices_are_exactly_the_five_confirmed_roles(self):
         valid = {r for r, _ in UserProfile.ROLE_CHOICES}
-        self.assertEqual(valid, {"leader", "operator", "engineer", "admin"})
-        self.assertNotIn("supervisor", valid)
+        self.assertEqual(
+            valid, {"leader", "operator", "engineer", "supervisor", "admin"})
+    
