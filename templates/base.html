@@ -223,7 +223,7 @@
         <i class="fas fa-cubes icon"></i><span class="sidebar-label">Models</span>
       </a>
 
-      {# ── Shifts: only admin, engineer & supervisor ─────────────────────────────── #}
+      {# ── Shifts: admin, engineer & supervisor ─────────────────────────────── #}
       {% if user.is_authenticated and user.profile.role in 'admin,engineer,supervisor' %}
       <a title="Shifts" href="{% url 'core:shift_list' %}"
          class="nav-item {% if 'shift_' in request.resolver_match.url_name %}active{% endif %}">
@@ -266,27 +266,29 @@
     {% if user.is_authenticated %}
     <div class="border-t border-slate-700/60 px-4 py-3">
       <div class="flex items-center gap-2.5 sidebar-foot">
-        {# Avatar with role color #}
-        <div class="w-7 h-7 rounded-full flex items-center justify-center text-white text-xs font-bold flex-shrink-0
-          {% if user.profile.role == 'admin' %}bg-rose-500
-          {% elif user.profile.role == 'leader' %}bg-emerald-500
-          {% elif user.profile.role == 'engineer' %}bg-violet-500
-          {% else %}bg-blue-500{% endif %}"
-          title="{{ user.username }} ({{ user.profile.get_role_display }})">
-          {{ user.username|first|upper }}
-        </div>
-        <div class="min-w-0 flex-1 sidebar-label">
-          <p class="text-slate-200 text-xs font-medium truncate leading-tight">{{ user.username }}</p>
-          {# Role badge #}
-          <span class="inline-flex items-center rounded px-1.5 py-0.5 mt-0.5 text-[10px] font-semibold leading-none
-            {% if user.profile.role == 'admin' %}bg-rose-500/20 text-rose-400
-            {% elif user.profile.role == 'leader' %}bg-emerald-500/20 text-emerald-400
-            {% elif user.profile.role == 'engineer' %}bg-violet-500/20 text-violet-400
-            {% else %}bg-blue-500/20 text-blue-400{% endif %}">
-            {{ user.profile.get_role_display }}
-          </span>
-        </div>
-        {# Sign-out icon button #}
+        <a href="{% url 'users:profile' %}" class="flex items-center gap-2.5 min-w-0 flex-1 no-underline hover:opacity-90 transition">
+          <div class="w-7 h-7 rounded-full flex items-center justify-center text-white text-xs font-bold flex-shrink-0
+            {% if user.profile.role == 'admin' %}bg-rose-500
+            {% elif user.profile.role == 'leader' %}bg-emerald-500
+            {% elif user.profile.role == 'engineer' %}bg-violet-500
+            {% elif user.profile.role == 'supervisor' %}bg-amber-500
+            {% else %}bg-blue-500{% endif %}"
+            title="{{ user.username }} ({{ user.profile.get_role_display }})">
+            {{ user.username|first|upper }}
+          </div>
+          <div class="min-w-0 flex-1 sidebar-label">
+            <p class="text-slate-200 text-xs font-medium truncate leading-tight">{{ user.username }}</p>
+            {# Role badge #}
+            <span class="inline-flex items-center rounded px-1.5 py-0.5 mt-0.5 text-[10px] font-semibold leading-none
+              {% if user.profile.role == 'admin' %}bg-rose-500/20 text-rose-400
+              {% elif user.profile.role == 'leader' %}bg-emerald-500/20 text-emerald-400
+              {% elif user.profile.role == 'engineer' %}bg-violet-500/20 text-violet-400
+              {% elif user.profile.role == 'supervisor' %}bg-amber-500/20 text-amber-400
+              {% else %}bg-blue-500/20 text-blue-400{% endif %}">
+              {{ user.profile.get_role_display }}
+            </span>
+          </div>
+        </a>
         <form method="post" action="{% url 'users:logout' %}">
           {% csrf_token %}
           <button type="submit" title="Sign out"

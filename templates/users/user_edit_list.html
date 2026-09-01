@@ -68,6 +68,7 @@
                 {% if u.profile.role == 'admin' %}bg-rose-500
                 {% elif u.profile.role == 'leader' %}bg-emerald-500
                 {% elif u.profile.role == 'engineer' %}bg-violet-500
+                {% elif u.profile.role == 'supervisor' %}bg-amber-500
                 {% else %}bg-blue-500{% endif %}">
                 {{ u.username|first|upper }}
               </div>
@@ -84,6 +85,7 @@
               {% if u.profile.role == 'admin' %}bg-rose-100 text-rose-700
               {% elif u.profile.role == 'leader' %}bg-emerald-100 text-emerald-700
               {% elif u.profile.role == 'engineer' %}bg-violet-100 text-violet-700
+              {% elif u.profile.role == 'supervisor' %}bg-amber-100 text-amber-700
               {% else %}bg-blue-100 text-blue-700{% endif %}">
               {{ u.profile.get_role_display }}
             </span>

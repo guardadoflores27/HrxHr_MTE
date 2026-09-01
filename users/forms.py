@@ -12,9 +12,10 @@ _select = _input + " bg-white"
 
 
 class CreateUserForm(UserCreationForm):
-    first_name = forms.CharField(max_length=50, required=False,
+    # Required so every account created is identifiable by name inside the app, not just by username.
+    first_name = forms.CharField(max_length=50, required=True,
                                  widget=forms.TextInput(attrs={"class": _input}))
-    last_name  = forms.CharField(max_length=50, required=False,
+    last_name  = forms.CharField(max_length=50, required=True,
                                  widget=forms.TextInput(attrs={"class": _input}))
     email      = forms.EmailField(required=False,
                                   widget=forms.EmailInput(attrs={"class": _input}))
@@ -134,12 +135,12 @@ class EditProfileForm(forms.ModelForm):
     drives the default password formula, so it stays admin-only via
     CreateUserForm/EditUserForm rather than self-editable).
     """
-    first_name = forms.CharField(max_length=50, required=False,
-                                     widget=forms.TextInput(attrs={"class": _input}))
-    last_name  = forms.CharField(max_length=50, required=False,
-                                     widget=forms.TextInput(attrs={"class": _input}))
+    first_name = forms.CharField(max_length=50, required=True,
+                                 widget=forms.TextInput(attrs={"class": _input}))
+    last_name  = forms.CharField(max_length=50, required=True,
+                                 widget=forms.TextInput(attrs={"class": _input}))
     email      = forms.EmailField(required=False,
-                                      widget=forms.EmailInput(attrs={"class": _input}))
+                                  widget=forms.EmailInput(attrs={"class": _input}))
 
     class Meta:
         model  = User

@@ -41,12 +41,18 @@
       {# Name row #}
       <div class="grid grid-cols-2 gap-4">
         <div>
-          <label class="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">First Name</label>
+          <label class="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">First Name <span class="text-red-400">*</span></label>
           {{ form.first_name }}
+          {% if form.first_name.errors %}
+            <p class="text-xs text-red-600 mt-1">{{ form.first_name.errors.0 }}</p>
+          {% endif %}
         </div>
         <div>
-          <label class="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">Last Name</label>
+          <label class="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">Last Name <span class="text-red-400">*</span></label>
           {{ form.last_name }}
+          {% if form.last_name.errors %}
+            <p class="text-xs text-red-600 mt-1">{{ form.last_name.errors.0 }}</p>
+          {% endif %}
         </div>
       </div>
 

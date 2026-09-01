@@ -56,6 +56,24 @@ def get_role(user):
     return profile.role if profile else None
 
 
+# SINGLE SOURCE OF TRUTH for the permission matrix documented above — same
+# rows/columns as the docstring table. This is what users.views.profile
+# passes to templates/users/profile.html for the "Your Permissions" panel,
+# so that panel can never drift out of sync with the table above again.
+PERMISSION_MATRIX = [
+    # (section,                leader,  operator, engineer, supervisor, admin)
+    ("Dashboard",              "full",  "full",   "full",   "full",     "full"),
+    ("Daily Plans",            "full",  "view",   "view",   "full",     "full"),
+    ("Hourly Plans",           "full",  "view",   "view",   "full",     "full"),
+    ("Execution",              "full",  "view",   "view",   "full",     "full"),
+    ("Work Centers",           "view",  "view",   "full",   "view",     "full"),
+    ("Subprocesses",           "view",  "view",   "full",   "view",     "full"),
+    ("Models",                 "full",  "view",   "view",   "full",     "full"),
+    ("Shifts",                 "view",  "view",   "full",   "full",     "full"),
+    ("Users Administration",   "view",  "view",   "view",   "view",     "full"),
+]
+
+
 def _deny(request, msg="You don't have permission to perform this action."):
     # AJAX callers (e.g. Execution's fetch-based save) need a JSON error,
     # not a redirect — a redirect response breaks their response parsing.

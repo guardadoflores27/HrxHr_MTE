@@ -21,6 +21,7 @@
         {% if target.profile.role == 'admin' %}bg-rose-500
         {% elif target.profile.role == 'leader' %}bg-emerald-500
         {% elif target.profile.role == 'engineer' %}bg-violet-500
+        {% elif target.profile.role == 'supervisor' %}bg-amber-500
         {% else %}bg-blue-500{% endif %}">
         {{ target.username|first|upper }}
       </div>
@@ -50,6 +51,7 @@
           <span class="flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-blue-500 inline-block"></span><strong>Operator</strong> — view only in most sections</span>
           <span class="flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-emerald-500 inline-block"></span><strong>Leader</strong> — full on planning & production</span>
           <span class="flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-violet-500 inline-block"></span><strong>Engineer</strong> — full on catalogs</span>
+          <span class="flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-amber-500 inline-block"></span><strong>Supervisor</strong> — like Leader, plus Shifts full</span>
           <span class="flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-rose-500 inline-block"></span><strong>Admin</strong> — all permissions</span>
         </div>
       </div>
@@ -81,7 +83,7 @@
     <div class="px-6 py-4 flex items-center justify-between gap-4">
       <div>
         <p class="text-sm font-semibold text-red-700">Delete Account</p>
-        <p class="text-xs text-gray-500 mt-0.5">Permanently removes <strong>{{ target.username }}</strong> and all their data. This cannot be undone.</p>
+        <p class="text-xs text-gray-500 mt-0.5">Deletes the login account. Their name stays on any Daily Plans, Hourly Plans, and headcount changes they created — that production history is not affected. This cannot be undone.</p>
       </div>
       <a href="{% url 'users:user_delete' target.pk %}"
          class="flex-shrink-0 inline-flex items-center gap-1.5 px-4 py-2 bg-red-600 hover:bg-red-500 text-white text-sm font-semibold rounded-lg transition">

@@ -6,12 +6,13 @@ from django.contrib import messages
 
 from .models import UserProfile
 from .forms  import CreateUserForm, EditUserForm, EditProfileForm
-from .decorators import admin_only
+from .decorators import admin_only, PERMISSION_MATRIX
 
 
 @login_required
 def profile(request):
-    return render(request, "users/profile.html")
+    return render(request, "users/profile.html", {"perm_matrix": PERMISSION_MATRIX})
+
 
 @login_required
 def profile_edit(request):
