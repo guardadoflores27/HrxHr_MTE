@@ -11,7 +11,7 @@ from django.views.decorators.http   import require_POST
 
 from core.models         import Shift, SubProcess, WorkCenter
 from production.models   import HourlyExecution
-from users.decorators    import not_operator_write
+from users.decorators    import not_operator_write, get_role
 
 from .forms    import DailyPlanForm, HourlyPlanForm
 from .models   import DailyPlan, HourlyPlan, HourlyPlanBlock, Model
@@ -27,8 +27,9 @@ from .services import (
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _role(request):
-    p = getattr(request.user, "profile", None)
-    return p.role if p else None
+    # Thin wrapper — see core/views.py::_role for why this stays request-
+    # based instead of touching every _role(request) call site in this file.
+    return get_role(request.user)
 
 def _json_error(msg, status=400):
     return JsonResponse({"ok": False, "error": msg}, status=status)

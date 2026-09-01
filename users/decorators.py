@@ -38,6 +38,23 @@ def _get_profile(request):
         return None
     return getattr(user, "profile", None)
 
+def get_role(user):
+    """
+    SINGLE SOURCE OF TRUTH for "what is this user's role" — returns the role
+    string (e.g. "admin") or None for anonymous users / users with no
+    profile. Takes a User object (not a request) so it works the same from
+    views (`get_role(request.user)`) and from plain service functions that
+    only ever see a user.
+    
+    This used to be reimplemented separately in core/views.py::_role,
+    planning/views.py::_role, and planning/services.py::get_user_role — three
+    copies of the same getattr(user, "profile", None) check that all had to
+    be edited in lockstep every time a role changed (that's exactly how the
+    Engineer/Hourly-Plans bug happened). Those three now delegate here.
+    """
+    profile = getattr(user, "profile", None)
+    return profile.role if profile else None
+
 
 def _deny(request, msg="You don't have permission to perform this action."):
     # AJAX callers (e.g. Execution's fetch-based save) need a JSON error,
@@ -88,6 +105,7 @@ def admin_or_engineer(view_func):
             )
         return view_func(request, *args, **kwargs)
     return _wrapped
+
 
 def admin_engineer_or_supervisor(view_func):
     """

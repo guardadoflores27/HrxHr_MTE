@@ -9,12 +9,14 @@ from django.contrib import messages
 
 from .models import WorkCenter, SubProcess, SubProcessType, Shift
 from .forms  import WorkCenterForm, SubProcessForm, SubProcessTypeForm, ShiftForm
-from users.decorators import admin_or_engineer, admin_engineer_or_supervisor, role_required
+from users.decorators import admin_or_engineer, admin_engineer_or_supervisor, role_required, get_role
 
 
 def _role(request):
-    p = getattr(request.user, "profile", None)
-    return p.role if p else None
+    # Kept as a thin request-based wrapper so every existing call site in
+    # this file (_role(request)) keeps working unchanged — the actual role
+    # lookup now lives in one place, users.decorators.get_role.
+    return get_role(request.user)
 
 
 # ── Work Center ────────────────────────────────────────────────────────────────
@@ -66,6 +68,10 @@ def wc_update(request, pk):
 @admin_or_engineer
 def wc_delete(request, pk):
     wc = get_object_or_404(WorkCenter, pk=pk)
+    # Same "blocked while in use" safety net as planning.model_delete —
+    # WorkCenter -> DailyPlan is on_delete=CASCADE, so deleting one used by
+    # any Daily Plan would silently wipe out that plan's entire execution
+    # history. Independent of who is allowed to delete it.
     blocking = wc.dailyplan_set.select_related("subprocess", "shift").distinct()
     if blocking.exists():
         messages.error(
@@ -79,6 +85,7 @@ def wc_delete(request, pk):
         messages.success(request, "Work center deleted.")
         return redirect("core:wc_list")
     return render(request, "core/confirm_delete.html", {"obj": wc, "back_url": "core:wc_list"})
+
 
 # ── Subprocess Type — Admin only ───────────────────────────────────────────────
 

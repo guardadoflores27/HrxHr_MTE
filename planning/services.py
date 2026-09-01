@@ -1,5 +1,6 @@
 import datetime as dt
 from django.utils import timezone
+from users.decorators import get_role as get_user_role
 from .models import DailyPlan, HourlyPlan, HourlyPlanBlock, HeadcountAudit
 
 
@@ -244,9 +245,10 @@ def update_headcount(daily_plan, new_value, comment, user, apply_to_all=False):
 
 # ─── Role helpers ─────────────────────────────────────────────────────────────
 
-def get_user_role(user):
-    p = getattr(user, "profile", None)
-    return p.role if p else None
+# get_user_role(user) is imported above from users.decorators (aliased from
+# get_role) — this used to be a separate local implementation of the exact
+# same getattr(user, "profile", None) check. Kept the name get_user_role so
+# every call site below (can_write, can_move_blocks, etc.) needed zero edits.
 
 def can_write(user):
     # Engineer is intentionally NOT included: per the confirmed permission
