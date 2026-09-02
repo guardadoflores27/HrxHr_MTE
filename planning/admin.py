@@ -65,6 +65,12 @@ class ProductModelAdmin(admin.ModelAdmin):
     def get_queryset(self, request):
         return super().get_queryset(request).prefetch_related("hourlyplan_set")
 
+    def has_delete_permission(self, request, obj = None):
+        # Model -> HourlyPlan is on_delete=CASCADE. planning.model_delete
+        # already blocks this in the app while the model is in use; /admin/
+        # has no such check, so deletion is forced through the app instead.
+        return False
+
 
 # ─── Daily plan (with inlines) ────────────────────────────────────────────────
 
@@ -94,6 +100,14 @@ class DailyPlanAdmin(admin.ModelAdmin):
         obj.updated_by, obj.updated_by_name = request.user, request.user.username
         super().save_model(request, obj, form, change)
 
+    def has_delete_permission(self, request, obj = None):
+        # Deleting a Daily Plan cascades to every HourlyPlan, HourlyExecution,
+        # ExecutionEvent, HourlyPlanBlock and HeadcountAudit tied to that day.
+        # planning.daily_plan_delete already restricts this to Admin-only
+        # once real production is captured; /admin/ has no such check at
+        # all, so deletion is forced through the app instead.
+        return False
+    
 
 @admin.register(HourlyPlan)
 class HourlyPlanAdmin(admin.ModelAdmin):
@@ -105,6 +119,12 @@ class HourlyPlanAdmin(admin.ModelAdmin):
     list_select_related = ("daily_plan", "model", "daily_plan__subprocess")
     ordering            = ("-daily_plan__date", "hour")
     list_per_page       = 50
+
+    def has_delete_permission(self, request, obj = None):
+        # Same reasoning as DailyPlanAdmin above — planning.hourly_plan_delete
+        # already restricts this to Admin-only once the hour has captured
+        # execution; /admin/ skips that check entirely.
+        return False
 
 
 # ─── Audit records — READ ONLY ────────────────────────────────────────────────

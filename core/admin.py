@@ -51,6 +51,13 @@ class WorkCenterAdmin(admin.ModelAdmin):
         obj.updated_by = request.user
         super().save_model(request, obj, form, change)
 
+    def has_delete_permission(self, request, obj = None):
+        # WorkCenter -> DailyPlan is on_delete=CASCADE — deleting one used by
+        # any Daily Plan silently wipes out that plan's entire execution
+        # history, and /admin/ doesn't run the "blocked while in use" check
+        # that core.views.wc_delete does. Force deletion through the app.
+        return False
+
 
 @admin.register(SubProcess)
 class SubProcessAdmin(admin.ModelAdmin):
@@ -76,6 +83,11 @@ class SubProcessAdmin(admin.ModelAdmin):
             obj.created_by = request.user
         obj.updated_by = request.user
         super().save_model(request, obj, form, change)
+
+    def has_delete_permission(self, request, obj = None):
+        # Same reasoning as WorkCenterAdmin above — Subprocess -> DailyPlan
+        # is also on_delete=CASCADE and /admin/ skips the in-use check.
+        return False
 
 
 @admin.register(SubProcessType)
