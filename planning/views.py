@@ -278,20 +278,12 @@ def hourly_plan_delete(request, plan_id, hp_id):
     # a GET reports what would be lost and the POST is the explicit go-ahead.
     execution = HourlyExecution.objects.filter(hourly_plan=hp).first()
 
-    # Once an hour has real production captured, deleting it destroys plan
-    # adherence history — restrict that specific case to Admin only. Hours
-    # with no execution yet are still plain planning and follow the normal
-    # write permission above (Leader/Supervisor/Admin).
-    if execution is not None and _role(request) != "admin":
-        msg = "Only Admins can delete an hour that already has production captured."
-        if is_ajax:
-            return _json_error(msg, 403)
-        messages.error(request, msg)
-        return redirect("planning:hourly_plan", plan_id=plan_id)
-
     if request.method != "POST":
-        # Pre-flight: let the UI warn the user with real numbers, including
-        # Plan Adherence so the decision isn't made on raw quantity alone.
+        # Pre-flight: shown to EVERYONE with write access, admin or not — the
+        # whole point of Plan Adherence is that Leader/Supervisor see it too
+        # before being told they can't delete. `admin_only` tells the UI
+        # whether to disable the confirm button; the real enforcement is
+        # below, on the POST, not here.
         if is_ajax:
             return _json_ok({
                 "id": hp_id,
@@ -301,6 +293,18 @@ def hourly_plan_delete(request, plan_id, hp_id):
                 "admin_only": execution is not None,
                 "confirm_required": True,
             })
+        return redirect("planning:hourly_plan", plan_id=plan_id)
+
+    # Once an hour has real production captured, deleting it destroys plan
+    # adherence history — restrict that specific case to Admin only. Hours
+    # with no execution yet are still plain planning and follow the normal
+    # write permission above (Leader/Supervisor/Admin). Checked here, on the
+    # POST, so the GET preflight above always gets to show its numbers first.
+    if execution is not None and _role(request) != "admin":
+        msg = "Only Admins can delete an hour that already has production captured."
+        if is_ajax:
+            return _json_error(msg, 403)
+        messages.error(request, msg)
         return redirect("planning:hourly_plan", plan_id=plan_id)
 
     lost = execution.actual_quantity if execution else None
