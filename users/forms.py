@@ -130,10 +130,11 @@ class CreateUserForm(UserCreationForm):
 class EditProfileForm(forms.ModelForm):
     """
     Self-service edit: any logged-in user can update their own contact
-    details. Deliberately excludes `role` (privilege escalation) and
-    `employee_number`/`date_of_birth` (employee_number in particular
-    drives the default password formula, so it stays admin-only via
-    CreateUserForm/EditUserForm rather than self-editable).
+    details, plus date_of_birth. Deliberately excludes `role`
+    (privilege escalation) and `employee_number`, which stays admin-only and
+    immutable once set: it drives the default password formula, so editing
+    it after account creation would silently make the account's real
+    password stop matching "Name + Employee Number" with no way to notice.
     """
     first_name = forms.CharField(max_length=50, required=True,
                                  widget=forms.TextInput(attrs={"class": _input}))
@@ -141,10 +142,28 @@ class EditProfileForm(forms.ModelForm):
                                  widget=forms.TextInput(attrs={"class": _input}))
     email      = forms.EmailField(required=False,
                                   widget=forms.EmailInput(attrs={"class": _input}))
+    date_of_birth = forms.DateField(
+        required=False,
+        widget=forms.DateInput(attrs={"class": _input, "type": "date"}),
+    )
 
     class Meta:
         model  = User
         fields = ["first_name", "last_name", "email"]
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        profile = getattr(self.instance, "profile", None)
+        if profile is not None:
+            self.fields["date_of_birth"].initial = profile.date_of_birth
+
+    def save(self, commit=True):
+        user = super().save(commit=commit)
+        if commit:
+            profile, _ = UserProfile.objects.get_or_create(user=user)
+            profile.date_of_birth = self.cleaned_data.get("date_of_birth")
+            profile.save()
+        return user
         
 
 class EditUserForm(forms.Form):
