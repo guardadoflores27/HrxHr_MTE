@@ -84,7 +84,7 @@
           <p class="font-semibold text-slate-800">{{ p.work_center.name }} · {{ p.date }}</p>
           <p class="text-slate-500 mt-0.5">
             {{ p.subprocess.name|default:"—" }} · {{ p.shift.name|default:"—" }}
-            {% if p.created_by %}· <span class="text-slate-400">by {{ p.created_by.username }}</span>{% endif %}
+            {% if p.creator_display != "—" %}· <span class="text-slate-400">by {{ p.creator_display }}</span>{% endif %}
           </p>
         </a>
         {% empty %}

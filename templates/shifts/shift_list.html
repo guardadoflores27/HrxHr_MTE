@@ -5,10 +5,12 @@
 {% block page_title %}Shift Management{% endblock %}
 
 {% block header_actions %}
+{% if can_write %}
 <a href="{% url 'core:shift_create' %}"
    class="inline-flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold px-4 py-2 rounded-lg transition shadow-sm">
   <i class="fas fa-plus"></i> New Shift
 </a>
+{% endif %}
 {% endblock %}
 
 {% block content %}
@@ -167,6 +169,7 @@
     </div>
 
     {# Action buttons #}
+    {% if can_write %}
     <div class="flex items-center gap-2 pt-1 border-t border-gray-50">
 
       <a href="{% url 'core:shift_update' shift.pk %}"
@@ -186,6 +189,7 @@
       </a>
 
     </div>
+    {% endif %}
 
   </div>
   {% endfor %}
@@ -219,12 +223,14 @@
     {% endif %}
   </p>
 
+  {% if can_write %}
   <a href="{% url 'core:shift_create' %}"
      class="inline-flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold px-5 py-2.5 rounded-lg transition">
 
     <i class="fas fa-plus"></i> Create Shift
 
   </a>
+  {% endif %}
 
 </div>
 

@@ -220,7 +220,7 @@ def build_day_report(plan):
             "subprocess":    plan.subprocess.name if plan.subprocess_id else "—",
             "shift":         plan.shift.name if plan.shift_id else "—",
             "headcount":     plan.headcount,
-            "creator":       (plan.created_by.username if plan.created_by_id else "—"),
+            "creator":       plan.creator_display,
             "creator_role":  _creator_role(plan),
             "conversion":    f"{factor} unit(s) = 1 piece",
             "conversion_factor": factor,

@@ -37,6 +37,7 @@ def wc_list(request):
     return render(request, "core/wc_list.html", {
         "centers": centers,
         "filter":  {"search": search, "status": status},
+        "can_write": _role(request) in ("engineer", "admin"),
     })
 
 
@@ -195,6 +196,7 @@ def sp_list(request):
         "subprocess_types": SubProcessType.objects.order_by("name"),
         "filter":           {"work_center": wc_id, "spt": spt_id, "search": search},
         "is_admin":         _role(request) == "admin",
+        "can_write":        _role(request) in ("engineer", "admin"),
     })
 
 
@@ -266,6 +268,7 @@ def shift_list(request):
         "total":  Shift.objects.count(),
         "search": search,
         "status": status,
+        "can_write": _role(request) in ("engineer", "supervisor", "admin"),
     })
 
 

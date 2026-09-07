@@ -85,13 +85,15 @@ class DailyPlanAdmin(admin.ModelAdmin):
     autocomplete_fields = ("work_center", "subprocess", "shift")
     list_select_related = ("work_center", "subprocess", "shift", "created_by")
     readonly_fields     = ("created_by", "created_by_name", "created_at",
-                           "updated_by", "updated_by_name", "updated_at")
+                           "updated_by", "updated_by_name", "updated_at",
+                           "operator_name")
     inlines             = (HourlyPlanInline, HourlyPlanBlockInline)
     actions             = (export_as_csv,)
     list_per_page       = 50
     fieldsets = (
-        (None,    {"fields": ("date", "work_center", "subprocess", "shift", "headcount")}),
-        ("Audit", {"fields": readonly_fields, "classes": ("collapse",)}),
+        (None,    {"fields": ("date", "work_center", "subprocess", "shift", "headcount", "operator", "operator_name")}),
+        ("Audit", {"fields": ("created_by", "created_by_name", "created_at",
+                              "updated_by", "updated_by_name", "updated_at"), "classes": ("collapse",)}),
     )
 
     def save_model(self, request, obj, form, change):
