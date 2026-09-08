@@ -798,7 +798,7 @@ def model_list(request):
         "models_qs": models_qs,
         "search":    search,
         "total":     Model.objects.count(),
-        "can_write": can_write,
+        "can_write": _role(request) in ("leader", "supervisor", "admin"),
     })
 
 
