@@ -846,3 +846,29 @@ def api_model_search(request):
         "models":        [{"id": m.id, "name": m.name} for m in models],
         "can_add_model": _role(request) in {"leader", "supervisor", "admin"},
     })
+
+
+@login_required
+@require_POST
+def api_model_create(request):
+    """
+    Creates a single Model from the "Model Not Found" popup on the Hourly
+    Plan screen, so Leader/Supervisor/Admin can add a missing model without
+    leaving the page (previously this sent them to the CSV-upload screen,
+    losing whatever hour/quantity they had already typed).
+    """
+    if _role(request) not in {"leader", "supervisor", "admin"}:
+        return _json_error("Permission denied.", 403)
+    try:
+        data = json.loads(request.body)
+    except json.JSONDecodeError:
+        return _json_error("Invalid JSON.")
+    
+    name = (data.get("name") or "").strip()
+    if not name:
+        return _json_error("Model name is required.")
+    if Model.objects.filter(name__iexact=name).exists():
+        return _json_error(f'"{name}" already exists in the catalog.')
+    
+    model = Model.objects.create(name=name)
+    return _json_ok({"id": model.id, "name": model.name})

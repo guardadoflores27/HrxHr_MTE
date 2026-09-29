@@ -735,12 +735,10 @@ function submitActualsAjax(form) {
   })
   .then(r => r.json())
   .then(data => {
-    // Permission denial (users.decorators._deny, e.g. not_operator_write)
-    // returns {"ok": false, "error": "..."} — a different shape from the
-    // normal per-row {"rows": [...]} response. Without this check, the
-    // empty `rows` array below silently fell through to the generic
-    // "No rows saved" message instead of showing the real reason.
-    if (data && data.ok === false) {
+    // Permission-denial shape from _deny() has no "rows" key at all — show
+    // its real message instead of silently falling through to "No rows
+    // saved" (which would be misleading: nothing was even attempted).
+    if (data && data.ok === false && !data.rows) {
       showFlash("error", data.error || "You don't have permission to save this.");
       return;
     }
