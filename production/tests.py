@@ -262,7 +262,7 @@ class ShiftOvertimeFilterTestCase(_TestCase):
         self.assertNotIn(self.plan_ot.id, self._plan_ids(r2))
 
     def test_execution_has_overtime_flag(self):
-        r = self.client.get("/production/")
+        r = self.client.get(f"/production/?work_center={self.wc.id}")
         by_id = {i["plan"].id: i for i in r.context["enriched"]}
         self.assertTrue(by_id[self.plan_ot.id]["has_overtime"])
         self.assertFalse(by_id[self.plan_reg.id]["has_overtime"])
@@ -281,7 +281,16 @@ class ShiftOvertimeFilterTestCase(_TestCase):
         self.assertEqual(ids, {self.plan_ot.id})
 
     def test_no_filter_shows_all(self):
+        """Execution shows the most recent plans by default (paginated),
+        instead of staying empty until a filter is chosen."""
         r = self.client.get("/production/")
+        self.assertFalse(r.context["has_filters"])
+        ids = self._plan_ids(r)
+        self.assertIn(self.plan_ot.id, ids)
+        self.assertIn(self.plan_reg.id, ids)
+    
+    def test_shared_filter_shows_all(self):
+        r = self.client.get(f"/production/?work_center={self.wc.id}")
         ids = self._plan_ids(r)
         self.assertIn(self.plan_ot.id, ids)
         self.assertIn(self.plan_reg.id, ids)
@@ -538,3 +547,42 @@ class HeadcountPlanVsActualTestCase(_TestCase):
             self.assertIn(col, headers)
         self.assertTrue(
             export_service.day_report_to_pdf(rep)[:5] == b"%PDF-")
+        
+
+class ExecutionListPaginationTestCase(_TestCase):
+    """execution_list (production:execution_list) must paginate the most
+    recent plans by default, 20 per page, and _build_plan_stats() must only
+    run for the current page — not the whole filtered set (it costs 5
+    queries per plan)."""
+
+    def setUp(self):
+        self.user = _User.objects.create_user("execpage1", password="pw")
+        _UP.objects.update_or_create(user=self.user, defaults={"role": "leader"})
+        self.wc = _WC.objects.create(name="WC-EXECPAGE")
+        spt = _SPT.objects.create(name="T-EXECPAGE", applies_to="reactores",
+                                  units_per_piece=1)
+        self.sp = _SP.objects.create(work_center=self.wc, name="SP-EXECPAGE",
+                                     subprocess_type=spt)
+        for i in range(30):
+            _DP.objects.create(
+                date=_dt.date(2027, 7, 1) + _dt.timedelta(days=i),
+                work_center=self.wc, subprocess=self.sp, headcount=5)
+        self.client = _Client()
+        self.client.login(username="execpage1", password="pw")
+
+    def test_filtered_result_is_paginated_at_20(self):
+        r = self.client.get(f"/production/?work_center={self.wc.id}")
+        self.assertEqual(len(r.context["page_obj"]), 20)
+        self.assertEqual(r.context["page_obj"].paginator.count, 30)
+        self.assertEqual(len(r.context["enriched"]), 20)
+
+    def test_unfiltered_default_is_also_paginated_at_20(self):
+        r = self.client.get("/production/")
+        self.assertFalse(r.context["has_filters"])
+        self.assertEqual(len(r.context["page_obj"]), 20)
+        self.assertEqual(r.context["page_obj"].paginator.count, 30)
+
+    def test_second_page_has_remaining_10(self):
+        r = self.client.get(f"/production/?work_center={self.wc.id}&page=2")
+        self.assertEqual(len(r.context["page_obj"]), 10)
+        self.assertEqual(len(r.context["enriched"]), 10)

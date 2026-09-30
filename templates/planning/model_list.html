@@ -79,7 +79,7 @@
         {% if search %}
         <div class="flex items-center justify-between text-xs">
           <span class="text-gray-500">Matching search</span>
-          <span class="font-bold mono text-blue-700">{{ models_qs|length }}</span>
+          <span class="font-bold mono text-blue-700">{{ page_obj.paginator.count }}</span>
         </div>
         {% endif %}
       </div>
@@ -124,10 +124,10 @@
             All Models
           {% endif %}
         </p>
-        <p class="text-xs text-gray-400 mono">{{ models_qs|length }} model{{ models_qs|length|pluralize }}</p>
+        <p class="text-xs text-gray-400 mono">{{ page_obj.paginator.count }} model{{ page_obj.paginator.count|pluralize }}</p>
       </div>
 
-      {% if models_qs %}
+      {% if page_obj %}
       <div class="overflow-x-auto">
         <table class="min-w-full text-sm" id="models-table">
           <thead>
@@ -139,9 +139,9 @@
             </tr>
           </thead>
           <tbody class="divide-y divide-gray-50" id="models-tbody">
-            {% for m in models_qs %}
+            {% for m in page_obj %}
             <tr class="hover:bg-gray-50 transition-colors group" id="row-{{ m.id }}">
-              <td class="px-5 py-3 text-xs text-gray-400 mono">{{ forloop.counter }}</td>
+              <td class="px-5 py-3 text-xs text-gray-400 mono">{{ page_obj.start_index|add:forloop.counter0 }}</td>
               <td class="px-5 py-3">
                 <span class="inline-flex items-center gap-2 font-semibold text-gray-800">
                   <span class="w-2 h-2 rounded-full bg-blue-400 flex-shrink-0"></span>
@@ -178,6 +178,7 @@
           </tbody>
         </table>
       </div>
+      {% include "includes/pagination.html" with page_obj=page_obj qs_prefix=qs_prefix %}
 
       {% else %}
       <div class="flex flex-col items-center py-20 text-center">

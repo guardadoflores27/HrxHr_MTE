@@ -4,7 +4,8 @@
 from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth.decorators import login_required
 from django.contrib import messages
-from django.db.models import Sum, Prefetch
+from django.core.paginator import Paginator
+from django.db.models import Sum
 from django.db import transaction
 from django.http import JsonResponse
 
@@ -78,18 +79,34 @@ def _build_plan_stats(plan):
     }
 
 
+def _qs_prefix(request):
+    """Current GET querystring with "page" stripped, plus a trailing "&" (or
+    "" when empty) — for building "?{{ qs_prefix }}page=N" pagination links
+    that keep whatever filters are active."""
+    params = request.GET.copy()
+    params.pop("page", None)
+    encoded = params.urlencode()
+    return f"{encoded}&" if encoded else ""
+
+
 @login_required
 def execution_list(request):
-    plans = DailyPlan.objects.select_related(
-        "work_center", "subprocess", "shift"
-    ).order_by("-date")
-
     date_from = request.GET.get("date_from",   "").strip()
     date_to   = request.GET.get("date_to",     "").strip()
     wc_id     = request.GET.get("work_center", "").strip()
     sp_id     = request.GET.get("subprocess",  "").strip()
     shift_id  = request.GET.get("shift",       "").strip()
-    only_ot   = request.GET.get("overtime",    "").strip()
+    only_ot   = request.GET.get("overtime",    "").strip()\
+
+    has_filters = any([date_from, date_to, wc_id, sp_id, shift_id, only_ot])
+
+    enriched = []
+
+    # Always show the most recent plans first, 20 per page; filters narrow
+    # the same paginated list instead of gating it behind a first filter.
+    plans = DailyPlan.objects.select_related(
+        "work_center", "subprocess", "shift"
+    ).order_by("-date")
 
     if date_from: plans = plans.filter(date__gte=date_from)
     if date_to:   plans = plans.filter(date__lte=date_to)
@@ -105,23 +122,34 @@ def execution_list(request):
     elif only_ot == "0":
         plans = plans.exclude(hourly_plans__is_overtime=True).distinct()
 
-    # Prefetch the overtime rows once for the whole page instead of querying
-    # per plan inside the loop (removes the N+1).
-    plans = plans.prefetch_related(
-        Prefetch(
-            "hourly_plans",
-            queryset=HourlyPlan.objects.filter(is_overtime=True)
-                                       .select_related("model")
-                                       .order_by("model__name"),
-            to_attr="overtime_rows",
-        )
+    # Roll up scrap across the WHOLE filtered set (every page), via one
+    # aggregate query — not by summing _build_plan_stats(), which would
+    # force building stats for plans outside the current page too.
+    total_scrap = (
+        HourlyExecution.objects
+        .filter(hourly_plan__daily_plan__in=plans)
+        .aggregate(t=Sum("scrap_quantity"))["t"] or 0
     )
 
-    enriched = []
-    for plan in plans:
+    # Paginate BEFORE the per-plan stats build below, so _build_plan_stats
+    # (5 queries each) only ever runs for the plans on the current page —
+    # not the entire filtered set.
+    paginator = Paginator(plans, 20)
+    page_obj  = paginator.get_page(request.GET.get("page"))
+
+    # Prefetch the overtime rows for just this page's plans instead of
+    # querying per plan inside the loop (removes that N+1 too).
+    plans_on_page = list(page_obj.object_list)
+    prefetch_qs = HourlyPlan.objects.filter(
+        is_overtime=True, daily_plan__in=plans_on_page
+    ).select_related("model").order_by("model__name")
+    overtime_by_plan = {}
+    for hp in prefetch_qs:
+        overtime_by_plan.setdefault(hp.daily_plan_id, []).append(hp)
+        
+    for plan in plans_on_page:
         stats = _build_plan_stats(plan)
-        # Distinct model names that ran in overtime, from the prefetched rows.
-        ot_models = sorted({r.model.name for r in plan.overtime_rows})
+        ot_models = sorted({r.model.name for r in overtime_by_plan.get(plan.id, [])})
         enriched.append({
             "plan": plan,
             "stats": stats,
@@ -129,12 +157,12 @@ def execution_list(request):
             "has_overtime": bool(ot_models),
         })
 
-    # Roll up scrap across every plan currently shown (respects the filters).
-    total_scrap = sum(e["stats"]["total_scrap_units"] for e in enriched)
-
     return render(request, "production/execution_list.html", {
         "enriched":     enriched,
         "total_scrap":  total_scrap,
+        "page_obj":     page_obj,
+        "has_filters":  has_filters,
+        "total_plans":  DailyPlan.objects.count(),
         "work_centers": WorkCenter.objects.filter(is_active=True).order_by("name"),
         "subprocesses": SubProcess.objects.select_related("work_center")
                                   .order_by("work_center__name", "name"),
@@ -144,6 +172,7 @@ def execution_list(request):
             "work_center": wc_id,     "subprocess": sp_id,
             "shift":       shift_id,  "overtime":   only_ot,
         },
+        "qs_prefix":    _qs_prefix(request),
     })
 
 

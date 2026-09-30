@@ -142,7 +142,8 @@
 <div class="flex items-center justify-between mb-4">
   <p class="text-sm text-gray-500">
     Showing <span class="font-semibold text-gray-800">{{ board_cards|length }}</span>
-    plan{{ board_cards|length|pluralize }}
+    of <span class="font-semibold text-gray-800">{{ page_obj.paginator.count }}</span>
+    plan{{ page_obj.paginator.count|pluralize }}
   </p>
 </div>
 
@@ -319,6 +320,8 @@
   {% endfor %}
 
 </div>
+
+{% include "includes/pagination.html" with page_obj=page_obj qs_prefix=qs_prefix %}
 
 {% else %}
 

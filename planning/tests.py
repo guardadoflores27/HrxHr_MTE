@@ -320,6 +320,113 @@ class MultiModelPerHourTestCase(TestCase):
         self.assertIn('ondrop="handleDrop(event, this)"', html)
 
 
+class ApiModelCreateTestCase(TestCase):
+    """
+    Covers the inline "Model Not Found" → create-and-use popup on the Hourly
+    Plan screen (api_model_create). Only Leader/Supervisor/Admin may create a
+    model this way, matching hourly_plan_view's and api_model_search's
+    can_add_model gate.
+    """
+
+    def setUp(self):
+        self.wc = WorkCenter.objects.create(name="WC-1")
+        self.sp_type = SubProcessType.objects.create(
+            name="Standard", applies_to="reactores", units_per_piece=1
+        )
+        self.subprocess = SubProcess.objects.create(
+            work_center=self.wc, name="SP-1", subprocess_type=self.sp_type
+        )
+        self.plan = DailyPlan.objects.create(
+            date=dt.date(2026, 6, 1),
+            work_center=self.wc, subprocess=self.subprocess, headcount=10,
+        )
+        self.url = reverse("planning:api_model_create")
+
+        def _make(username, role):
+            user = User.objects.create_user(username=username, password="pw12345")
+            UserProfile.objects.update_or_create(user=user, defaults={"role": role})
+            client = Client()
+            client.login(username=username, password="pw12345")
+            return client
+
+        self.leader_client     = _make("leader1",     "leader")
+        self.supervisor_client = _make("supervisor1", "supervisor")
+        self.admin_client      = _make("admin1",      "admin")
+        self.engineer_client   = _make("engineer1",   "engineer")
+        self.operator_client   = _make("operator1",   "operator")
+
+    def _create(self, client, name):
+        return client.post(
+            self.url, data=json.dumps({"name": name}), content_type="application/json"
+        )
+
+    def test_leader_supervisor_and_admin_can_create_a_model(self):
+        for client, name in [
+            (self.leader_client, "New Model Leader"),
+            (self.supervisor_client, "New Model Supervisor"),
+            (self.admin_client, "New Model Admin"),
+        ]:
+            resp = self._create(client, name)
+            self.assertEqual(resp.status_code, 200)
+            data = resp.json()
+            self.assertTrue(data["ok"])
+            self.assertEqual(data["name"], name)
+            self.assertTrue(PlanningModel.objects.filter(name=name).exists())
+
+    def test_engineer_and_operator_cannot_create_a_model(self):
+        for client in [self.engineer_client, self.operator_client]:
+            resp = self._create(client, "Should Not Exist")
+            self.assertEqual(resp.status_code, 403)
+            self.assertFalse(resp.json()["ok"])
+            self.assertFalse(PlanningModel.objects.filter(name="Should Not Exist").exists())
+
+    def test_duplicate_name_is_rejected_case_insensitively(self):
+        PlanningModel.objects.create(name="Existing Model")
+        resp = self._create(self.leader_client, "existing model")
+        self.assertEqual(resp.status_code, 400)
+        data = resp.json()
+        self.assertFalse(data["ok"])
+        self.assertIn("already exists", data["error"])
+
+    def test_blank_name_is_rejected(self):
+        resp = self._create(self.leader_client, "   ")
+        self.assertEqual(resp.status_code, 400)
+        self.assertFalse(resp.json()["ok"])
+
+    def test_created_model_is_immediately_usable_in_add_row(self):
+        """The whole point of the popup: create it, then plan an hour with it
+        in the same flow, without a page reload."""
+        resp = self._create(self.leader_client, "Freshly Created")
+        model_id = resp.json()["id"]
+
+        add_url = reverse("planning:api_add_row", args=[self.plan.id])
+        payload = {
+            "hour": "08:00", "model_id": model_id, "quantity": 50,
+            "headcount_override": None, "is_overtime": False, "comments": "",
+        }
+        resp2 = self.leader_client.post(
+            add_url, data=json.dumps(payload), content_type="application/json"
+        )
+        self.assertEqual(resp2.status_code, 200)
+        self.assertTrue(resp2.json()["ok"])
+
+    def test_can_add_model_flag_matches_creation_permission_on_hourly_plan_view(self):
+        """hourly_plan_view's can_add_model must stay in sync with who
+        api_model_create actually allows — this is what gates the popup."""
+        url = reverse("planning:hourly_plan", args=[self.plan.id])
+        for client, expected in [
+            (self.leader_client, True), (self.supervisor_client, True),
+            (self.admin_client, True), (self.engineer_client, False),
+            (self.operator_client, False),
+        ]:
+            resp = self.client_get_can_add_model(client, url)
+            self.assertEqual(resp, expected)
+
+    def client_get_can_add_model(self, client, url):
+        resp = client.get(url)
+        return resp.context["can_add_model"]
+
+
 class ActualsPerModelTestCase(TestCase):
     """
     Covers the Actuals requirement: each model within a shared hour keeps its
@@ -477,7 +584,9 @@ class DashboardMultiModelTestCase(TestCase):
         self.assertEqual(resp.status_code, 200)
 
     def test_dashboard_chart_has_one_point_per_model(self):
-        resp = self.client.get(reverse("planning:dashboard"))
+        # Dashboard is filter-first: the chart only builds once a filter is
+        # chosen, so filter by this test's own Work Center to see it.
+        resp = self.client.get(reverse("planning:dashboard") + f"?wc={self.wc.id}")
         html = resp.content.decode()
         self.assertIn("Dash Model A", html)
         self.assertIn("Dash Model B", html)
@@ -781,7 +890,7 @@ class SubprocessFilterTestCase(TestCase):
 
     def test_daily_plans_filter(self):
         r = self.client.get(f"/plans/?subprocess={self.sp_a.id}")
-        ids = {p.id for p in r.context["plans"]}
+        ids = {p.id for p in r.context["page_obj"]}
         self.assertIn(self.plan_a.id, ids)
         self.assertNotIn(self.plan_b.id, ids)
 
@@ -798,8 +907,17 @@ class SubprocessFilterTestCase(TestCase):
         self.assertNotIn(self.plan_b.id, ids)
 
     def test_no_filter_shows_both(self):
+        """Daily Plans shows the most recent plans by default (paginated),
+        instead of staying empty until a filter is chosen."""
         r = self.client.get("/plans/")
-        ids = {p.id for p in r.context["plans"]}
+        ids = {p.id for p in r.context["page_obj"]}
+        self.assertIn(self.plan_a.id, ids)
+        self.assertIn(self.plan_b.id, ids)
+        self.assertFalse(r.context["has_filters"])
+
+    def test_shared_filter_shows_both(self):
+        r = self.client.get("/plans/?work_center=" + str(self.plan_a.work_center_id))
+        ids = {p.id for p in r.context["page_obj"]}
         self.assertIn(self.plan_a.id, ids)
         self.assertIn(self.plan_b.id, ids)
 
@@ -863,18 +981,18 @@ class DashboardFiltersTestCase(TestCase):
 
     def test_subprocess_filter_narrows_results(self):
         r = self.client.get(f"/?subprocess={self.sp_a.id}")
-        plan_ids = {hp.daily_plan_id for hp in r.context["data"]}
+        plan_ids = {hp.daily_plan_id for hp in r.context["page_obj"]}
         self.assertIn(self.plan_a.id, plan_ids)
         self.assertNotIn(self.plan_b.id, plan_ids)
 
     def test_shift_filter_available(self):
         r = self.client.get(f"/?shift={self.shift.id}")
-        plan_ids = {hp.daily_plan_id for hp in r.context["data"]}
+        plan_ids = {hp.daily_plan_id for hp in r.context["page_obj"]}
         self.assertIn(self.plan_a.id, plan_ids)
 
     def test_date_filter_narrows_results(self):
         r = self.client.get("/?date=2027-02-01")
-        plan_ids = {hp.daily_plan_id for hp in r.context["data"]}
+        plan_ids = {hp.daily_plan_id for hp in r.context["page_obj"]}
         self.assertIn(self.plan_a.id, plan_ids)
         self.assertNotIn(self.plan_b.id, plan_ids)
 
@@ -963,3 +1081,125 @@ class DashboardFilterBarTestCase(TestCase):
         """The old badge inside the chart card must be gone — no duplicates."""
         html = self._html(f"/?wc={self.wc_data.id}")
         self.assertEqual(html.count("75 / 100"), 1)
+
+
+class ModelCatalogPaginationTestCase(TestCase):
+    """Model catalog (planning:model_list) must paginate instead of
+    rendering the whole table at once — real data already has 950+ rows."""
+
+    def setUp(self):
+        self.user = User.objects.create_user(username="modelpage1", password="pw12345")
+        UserProfile.objects.update_or_create(user=self.user, defaults={"role": "leader"})
+        # 120 models so pagination (50/page) has 3 pages to work with.
+        PlanningModel.objects.bulk_create([
+            PlanningModel(name=f"Page Model {i:04d}") for i in range(120)
+        ])
+        self.client = Client()
+        self.client.login(username="modelpage1", password="pw12345")
+
+    def test_first_page_has_50_and_more_pages_exist(self):
+        r = self.client.get(reverse("planning:model_list"))
+        self.assertEqual(len(r.context["page_obj"]), 50)
+        self.assertEqual(r.context["page_obj"].paginator.num_pages, 3)
+        self.assertEqual(r.context["page_obj"].paginator.count, 120)
+
+    def test_second_page_returns_next_50(self):
+        r1 = self.client.get(reverse("planning:model_list"))
+        r2 = self.client.get(reverse("planning:model_list") + "?page=2")
+        names_p1 = {m.name for m in r1.context["page_obj"]}
+        names_p2 = {m.name for m in r2.context["page_obj"]}
+        self.assertEqual(len(names_p2), 50)
+        self.assertEqual(names_p1 & names_p2, set())
+
+    def test_search_narrows_and_resets_pagination(self):
+        r = self.client.get(reverse("planning:model_list") + "?q=Page Model 000")
+        # "Page Model 000" matches 0000-0009 → 10 results, fits on one page.
+        self.assertEqual(r.context["page_obj"].paginator.count, 10)
+
+
+class DailyPlanListPaginationTestCase(TestCase):
+    """daily_plan_list (planning:daily_plan_list) must paginate the most
+    recent plans by default, 20 per page, filtered or not."""
+
+    def setUp(self):
+        self.user = User.objects.create_user(username="planpage1", password="pw12345")
+        UserProfile.objects.update_or_create(user=self.user, defaults={"role": "leader"})
+        self.wc = WorkCenter.objects.create(name="WC-PAGE")
+        sp_type = SubProcessType.objects.create(
+            name="T-PAGE", applies_to="reactores", units_per_piece=1
+        )
+        self.sp = SubProcess.objects.create(
+            work_center=self.wc, name="SP-PAGE", subprocess_type=sp_type
+        )
+        for i in range(60):
+            DailyPlan.objects.create(
+                date=dt.date(2027, 6, 1) + dt.timedelta(days=i),
+                work_center=self.wc, subprocess=self.sp, headcount=5,
+            )
+        self.client = Client()
+        self.client.login(username="planpage1", password="pw12345")
+
+    def test_filtered_result_is_paginated_at_20(self):
+        r = self.client.get(
+            reverse("planning:daily_plan_list") + f"?work_center={self.wc.id}"
+        )
+        self.assertEqual(len(r.context["page_obj"]), 20)
+        self.assertEqual(r.context["page_obj"].paginator.count, 60)
+        self.assertEqual(r.context["page_obj"].paginator.num_pages, 3)
+
+    def test_unfiltered_default_is_also_paginated_at_20(self):
+        r = self.client.get(reverse("planning:daily_plan_list"))
+        self.assertEqual(len(r.context["page_obj"]), 20)
+        self.assertEqual(r.context["page_obj"].paginator.count, 60)
+        self.assertFalse(r.context["has_filters"])
+
+    def test_third_page_has_remaining_20(self):
+        r = self.client.get(
+            reverse("planning:daily_plan_list")
+            + f"?work_center={self.wc.id}&page=3"
+        )
+        self.assertEqual(len(r.context["page_obj"]), 20)
+
+class HourlyPlanBoardPaginationTestCase(TestCase):
+    """hourly_plan_board (planning:hourly_plan_board, the "Hourly Plans
+    Board") must paginate the most recent plans by default, 6 per page,
+    filtered or not."""
+
+    def setUp(self):
+        self.user = User.objects.create_user(username="boardpage1", password="pw12345")
+        UserProfile.objects.update_or_create(user=self.user, defaults={"role": "leader"})
+        self.wc = WorkCenter.objects.create(name="WC-BOARD")
+        sp_type = SubProcessType.objects.create(
+            name="T-BOARD", applies_to="reactores", units_per_piece=1
+        )
+        self.sp = SubProcess.objects.create(
+            work_center=self.wc, name="SP-BOARD", subprocess_type=sp_type
+        )
+        for i in range(14):
+            DailyPlan.objects.create(
+                date=dt.date(2027, 7, 1) + dt.timedelta(days=i),
+                work_center=self.wc, subprocess=self.sp, headcount=5,
+            )
+        self.client = Client()
+        self.client.login(username="boardpage1", password="pw12345")
+
+    def test_default_view_shows_6_most_recent(self):
+        r = self.client.get(reverse("planning:hourly_plan_board"))
+        self.assertEqual(len(r.context["board_cards"]), 6)
+        self.assertEqual(r.context["page_obj"].paginator.count, 14)
+        self.assertEqual(r.context["page_obj"].paginator.num_pages, 3)
+        dates = [c["plan"].date for c in r.context["board_cards"]]
+        self.assertEqual(dates, sorted(dates, reverse=True))
+
+    def test_filter_narrows_the_same_paginated_list(self):
+        r = self.client.get(
+            reverse("planning:hourly_plan_board") + f"?work_center={self.wc.id}"
+        )
+        self.assertEqual(len(r.context["board_cards"]), 6)
+        self.assertEqual(r.context["page_obj"].paginator.count, 14)
+
+    def test_third_page_has_remaining_2(self):
+        r = self.client.get(
+            reverse("planning:hourly_plan_board") + "?page=3"
+        )
+        self.assertEqual(len(r.context["board_cards"]), 2)

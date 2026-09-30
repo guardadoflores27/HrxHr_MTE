@@ -150,16 +150,22 @@
 <div class="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
   <div class="px-5 py-3 border-b border-gray-100 flex items-center justify-between">
     <p class="text-sm font-semibold text-gray-700">
-      {% if filter.date_from or filter.date_to or filter.work_center %}
+      {% if has_filters %}
         Filtered results
       {% else %}
-        All Daily Plans
+        Daily Plans
       {% endif %}
     </p>
-    <p class="text-xs text-gray-400 mono">{{ plans|length }} plan{{ plans|length|pluralize:"s" }}</p>
+    <p class="text-xs text-gray-400 mono">
+      {% if has_filters %}
+        {{ page_obj.paginator.count }} plan{{ page_obj.paginator.count|pluralize }} matching
+      {% else %}
+        {{ total_plans }} total
+      {% endif %}
+    </p>
   </div>
 
-  {% if plans %}
+  {% if page_obj %}
   <div class="overflow-x-auto">
     <table class="min-w-full text-sm">
       <thead>
@@ -173,7 +179,7 @@
         </tr>
       </thead>
       <tbody class="divide-y divide-gray-50">
-        {% for plan in plans %}
+        {% for plan in page_obj %}
         <tr class="transition-colors hover:bg-gray-50/60">
           <td class="px-4 py-2.5 font-semibold text-gray-900 mono text-xs">{{ plan.date }}</td>
           <td class="px-4 py-2.5 text-gray-700">{{ plan.work_center.name }}</td>
@@ -216,32 +222,23 @@
       </tbody>
     </table>
   </div>
+  {% include "includes/pagination.html" with page_obj=page_obj qs_prefix=qs_prefix %}
 
   {% else %}
   <div class="flex flex-col items-center py-16 text-center">
     <div class="w-12 h-12 rounded-full bg-gray-100 flex items-center justify-center mb-3">
-      {% if filter.date_from or filter.date_to or filter.work_center %}
-        <i class="fas fa-filter text-gray-300 text-xl"></i>
-      {% else %}
-        <i class="fas fa-calendar-xmark text-gray-300 text-xl"></i>
-      {% endif %}
+      <i class="fas fa-filter text-gray-300 text-xl"></i>
     </div>
-    {% if filter.date_from or filter.date_to or filter.work_center %}
-      <p class="text-sm text-gray-400">No results for the applied filters.</p>
-      <a href="{% url 'planning:daily_plan_list' %}"
-         class="mt-3 text-sm text-blue-600 hover:underline font-medium">
-        View all plans →
-      </a>
+    {% if has_filters %}
+    <p class="text-sm text-gray-400">No plans match these filters.</p>
     {% else %}
-      <p class="text-sm text-gray-400">No plans yet.</p>
-      {% if can_write %}
-<a href="{% url 'planning:daily_plan_create' %}"
-         class="mt-3 text-sm text-blue-600 hover:underline font-medium">
-        Create your first plan →
-      </a>
-{% else %}
-<p class="mt-3 text-sm text-gray-400" title="Only Leaders, Supervisors, and Admins can create plans. Your role is {{ user.profile.role_label }}.">Contact a Leader, Supervisor, or Admin to create one.</p>
-{% endif %}
+    <p class="text-sm text-gray-400">No plans yet.</p>
+    {% if can_write %}
+    <a href="{% url 'planning:daily_plan_create' %}"
+       class="mt-3 text-sm text-blue-600 hover:underline font-medium">
+      Create your first plan →
+    </a>
+    {% endif %}
     {% endif %}
   </div>
   {% endif %}
