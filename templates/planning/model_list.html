@@ -4,7 +4,7 @@
 {% block page_title %}Models Catalog{% endblock %}
 
 {% block header_actions %}
-<span class="text-xs text-gray-400 mono bg-gray-100 px-3 py-1.5 rounded-lg">
+<span id="total-badge" class="text-xs text-gray-400 mono bg-gray-100 px-3 py-1.5 rounded-lg">
   {{ total }} model{{ total|pluralize }} in DB
 </span>
 {% endblock %}
@@ -71,7 +71,7 @@
       </div>
 
       <!-- Stats -->
-      <div class="pt-3 border-t border-gray-100 space-y-2">
+      <div id="model-stats" class="pt-3 border-t border-gray-100 space-y-2">
         <div class="flex items-center justify-between text-xs">
           <span class="text-gray-500">Total models</span>
           <span class="font-bold mono text-gray-800">{{ total }}</span>
@@ -114,7 +114,7 @@
     </form>
 
     <!-- Table card -->
-    <div class="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+    <div id="models-card" class="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
 
       <div class="flex items-center justify-between px-5 py-3 border-b border-gray-100 bg-gray-50">
         <p class="text-sm font-semibold text-gray-700">
@@ -392,42 +392,75 @@
     return v.length === 2 ? v.pop().split(';').shift() : '';
   }
 
-  document.querySelectorAll('.delete-btn').forEach(btn => {
-    btn.addEventListener('click', async () => {
-      const id    = btn.dataset.id;
-      const name  = btn.dataset.name;
-      const url   = btn.dataset.url;
-      const count = parseInt(btn.dataset.count, 10);
+  /* ── Resync with the server after a delete ──────────────────────────────
+     Removing just the clicked row leaves the surrounding counts ("N models
+     in DB", "Total models", the paginator) stale and can desync pagination
+     boundaries. Re-fetch the current URL (same filters/page) and swap in
+     the fresh table/counts/pagination, so nothing ever shows a model that
+     no longer exists — without a full page reload. */
+  async function refreshList() {
+    try {
+      const res  = await fetch(window.location.href, {
+        headers: { 'X-Requested-With': 'XMLHttpRequest' }
+      });
+      const html = await res.text();
+      const doc  = new DOMParser().parseFromString(html, 'text/html');
+      ['models-card', 'model-stats', 'total-badge'].forEach(id => {
+        const fresh   = doc.getElementById(id);
+        const current = document.getElementById(id);
+        if (fresh && current) current.innerHTML = fresh.innerHTML;
+      }); 
+    } catch {
+      /* Best-effort resync — the optimistic row fade already reflects the
+         change, so a failed refresh here doesn't leave anything broken. */
+    }
+  }
 
-      showModal();
-
-      if (count === 0) {
-        setConfirmState(name, url, id);
-        return;
-      }
-
-      /* Model has linked plans — fetch to get list */
-      try {
-        const res  = await fetch(url, {
-          method:  'POST',
-          headers: { 'X-CSRFToken': getCsrf() }
-        });
-        const data = await res.json();
-
-        if (data.ok) {
-          hideModal();
-          removeRow(id);
-        } else if (data.blocking_plans && data.blocking_plans.length) {
-          setBlockedState(name, data.blocking_plans);
-        } else {
-          setConfirmState(name, url, id);
-        }
-      } catch {
-        hideModal();
-        alert('Network error. Please try again.');
-      }
-    });
+  /* Event delegation (not per-button listeners): refreshList() replaces the
+     delete buttons' markup wholesale, so a listener bound directly to a
+     button would be lost the moment the list resyncs. Binding on the
+     document instead means every current and future .delete-btn works. */
+  document.addEventListener('click', e => {
+    const btn = e.target.closest('.delete-btn');
+    if (!btn) return;
+    handleDeleteClick(btn);
   });
+
+  async function handleDeleteClick(btn) {
+    const id    = btn.dataset.id;
+    const name  = btn.dataset.name;
+    const url   = btn.dataset.url;
+    const count = parseInt(btn.dataset.count, 10);
+    
+    showModal();
+
+    if (count === 0) {
+      setConfirmState(name, url, id);
+      return;
+    }
+
+    /* Model has linked plans — fetch to get list */
+    try {
+      const res  = await fetch(url, {
+        method:  'POST',
+        headers: { 'X-CSRFToken': getCsrf() }
+      });
+      const data = await res.json();
+
+      if (data.ok) {
+        hideModal();
+        removeRow(id);
+        refreshList();
+      } else if (data.blocking_plans && data.blocking_plans.length) {
+        setBlockedState(name, data.blocking_plans);
+      } else {
+        setConfirmState(name, url, id);
+      }
+    } catch {
+      hideModal();
+      alert('Network error. Please try again.');
+    }
+  }
 
   confirmBtn.addEventListener('click', async () => {
     if (!deleteUrl) return;
@@ -444,6 +477,7 @@
       hideModal();
       if (data.ok) {
         removeRow(deleteRowId);
+        refreshList();
       } else {
         alert('Could not delete: ' + (data.error || 'unknown error'));
       }
