@@ -100,6 +100,23 @@
       </select>
     </div>
 
+    {# Created By #}
+    <div class="flex flex-col gap-1 min-w-40">
+      <label class="text-xs font-semibold text-gray-500 uppercase tracking-wide">
+        <i class="fas fa-user mr-1 text-gray-400"></i>Created By
+      </label>
+      <select name="created_by"
+              class="rounded-lg border border-gray-300 px-3 py-1.5 text-sm shadow-sm
+                     focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none bg-white">
+        <option value="">— All —</option>
+        {% for u in creators %}
+        <option value="{{ u.id }}" {% if filter.created_by == u.id|stringformat:"s" %}selected{% endif %}>
+          {{ u.username }}
+        </option>
+        {% endfor %}
+      </select>
+    </div>
+
     {# Botones #}
     <div class="flex gap-2 pb-0.5">
       <button type="submit"
@@ -107,7 +124,7 @@
                      text-xs font-semibold px-4 py-2 rounded-lg transition">
         <i class="fas fa-magnifying-glass text-xs"></i> Filter
       </button>
-      {% if filter.date_from or filter.date_to or filter.work_center %}
+      {% if filter.date_from or filter.date_to or filter.work_center or filter.created_by %}
       <a href="{% url 'planning:daily_plan_list' %}"
          class="inline-flex items-center gap-1.5 text-xs font-semibold text-gray-500
                 hover:text-gray-800 border border-gray-200 hover:border-gray-300
@@ -120,7 +137,7 @@
   </div>
 
   {# Chips de filtros activos #}
-  {% if filter.date_from or filter.date_to or filter.work_center %}
+  {% if filter.date_from or filter.date_to or filter.work_center or filter.created_by %}
   <div class="flex flex-wrap gap-2 mt-3 pt-3 border-t border-gray-100">
     <span class="text-xs text-gray-400">Active filters:</span>
     {% if filter.date_from %}
@@ -140,6 +157,13 @@
                  text-xs font-medium px-2 py-0.5 rounded-full">
       <i class="fas fa-industry text-[10px]"></i>
       {% for wc in work_centers %}{% if wc.id|stringformat:"s" == filter.work_center %}{{ wc.name }}{% endif %}{% endfor %}
+    </span>
+    {% endif %}
+    {% if filter.created_by %}
+    <span class="inline-flex items-center gap-1 bg-violet-50 text-violet-700 border border-violet-200
+                 text-xs font-medium px-2 py-0.5 rounded-full">
+      <i class="fas fa-user text-[10px]"></i>
+      {% for u in creators %}{% if u.id|stringformat:"s" == filter.created_by %}{{ u.username }}{% endif %}{% endfor %}
     </span>
     {% endif %}
   </div>
@@ -175,6 +199,7 @@
           <th class="px-4 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Subprocess</th>
           <th class="px-4 py-2.5 text-center text-xs font-semibold text-gray-500 uppercase tracking-wide">HC</th>
           <th class="px-4 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Shift</th>
+          <th class="px-4 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Created By</th>
           <th class="px-4 py-2.5 text-right text-xs font-semibold text-gray-500 uppercase tracking-wide">Actions</th>
         </tr>
       </thead>
@@ -191,6 +216,12 @@
           <td class="px-4 py-2.5 text-center font-medium text-gray-700 mono text-xs">{{ plan.headcount }}</td>
           <td class="px-4 py-2.5 mono text-xs text-gray-500">
             {{ plan.shift.start_time|time:"g:i A" }} – {{ plan.shift.end_time|time:"g:i A" }}
+          </td>
+          <td class="px-4 py-2.5 text-xs text-gray-500">
+            <span class="inline-flex items-center gap-1.5">
+              <i class="fas fa-user text-[10px] text-gray-300"></i>
+              {{ plan.creator_display }}
+            </span>
           </td>
           <td class="px-4 py-2.5 text-right">
             <div class="inline-flex items-center gap-3">

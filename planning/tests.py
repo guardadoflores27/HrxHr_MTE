@@ -1203,3 +1203,60 @@ class HourlyPlanBoardPaginationTestCase(TestCase):
             reverse("planning:hourly_plan_board") + "?page=3"
         )
         self.assertEqual(len(r.context["board_cards"]), 2)
+
+
+class DailyPlanCreatedByFilterTestCase(TestCase):
+    """daily_plan_list (planning:daily_plan_list) must filter by who
+    created the plan, and the dropdown must only list users who have
+    actually created at least one plan."""
+
+    def setUp(self):
+        self.wc = WorkCenter.objects.create(name="WC-CREATEDBY")
+        sp_type = SubProcessType.objects.create(
+            name="T-CREATEDBY", applies_to="reactores", units_per_piece=1
+        )
+        self.sp = SubProcess.objects.create(
+            work_center=self.wc, name="SP-CREATEDBY", subprocess_type=sp_type
+        )
+
+        self.leader = User.objects.create_user(username="plancreator1", password="pw12345")
+        UserProfile.objects.update_or_create(user=self.leader, defaults={"role": "leader"})
+        self.supervisor = User.objects.create_user(username="plancreator2", password="pw12345")
+        UserProfile.objects.update_or_create(user=self.supervisor, defaults={"role": "supervisor"})
+        # Never creates a plan — must NOT show up in the "Created By" dropdown.
+        self.bystander = User.objects.create_user(username="plancreator3", password="pw12345")
+        UserProfile.objects.update_or_create(user=self.bystander, defaults={"role": "operator"})
+
+        self.plan_leader = DailyPlan.objects.create(
+            date=dt.date(2027, 8, 1), work_center=self.wc, subprocess=self.sp,
+            headcount=5, created_by=self.leader,
+        )
+        self.plan_supervisor = DailyPlan.objects.create(
+            date=dt.date(2027, 8, 2), work_center=self.wc, subprocess=self.sp,
+            headcount=5, created_by=self.supervisor,
+        )
+
+        self.client = Client()
+        self.client.login(username="plancreator1", password="pw12345")
+
+    def test_filter_by_created_by_narrows_results(self):
+        r = self.client.get(
+            reverse("planning:daily_plan_list") + f"?created_by={self.leader.id}"
+        )
+        ids = {p.id for p in r.context["page_obj"]}
+        self.assertIn(self.plan_leader.id, ids)
+        self.assertNotIn(self.plan_supervisor.id, ids)
+        self.assertTrue(r.context["has_filters"])
+
+    def test_dropdown_only_lists_users_who_created_a_plan(self):
+        r = self.client.get(reverse("planning:daily_plan_list"))
+        creator_ids = {u.id for u in r.context["creators"]}
+        self.assertIn(self.leader.id, creator_ids)
+        self.assertIn(self.supervisor.id, creator_ids)
+        self.assertNotIn(self.bystander.id, creator_ids)
+
+    def test_creator_name_rendered_in_table(self):
+        r = self.client.get(reverse("planning:daily_plan_list"))
+        html = r.content.decode()
+        self.assertIn("plancreator1", html)
+        self.assertIn("plancreator2", html)

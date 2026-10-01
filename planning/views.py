@@ -5,6 +5,7 @@ import datetime as dt
 
 from django.contrib                 import messages
 from django.contrib.auth.decorators import login_required
+from django.contrib.auth.models     import User
 from django.core.paginator          import Paginator
 from django.db.models                import Prefetch
 from django.http                    import JsonResponse
@@ -151,26 +152,35 @@ def dashboard(request):
 
 @login_required
 def daily_plan_list(request):
-    date_from = request.GET.get("date_from", "").strip()
-    date_to   = request.GET.get("date_to",   "").strip()
-    wc_id     = request.GET.get("work_center","").strip()
-    sp_id     = request.GET.get("subprocess", "").strip()
-    shift_id  = request.GET.get("shift",      "").strip()
+    date_from  = request.GET.get("date_from",  "").strip()
+    date_to    = request.GET.get("date_to",    "").strip()
+    wc_id      = request.GET.get("work_center","").strip()
+    sp_id      = request.GET.get("subprocess", "").strip()
+    shift_id   = request.GET.get("shift",      "").strip()
+    creator_id = request.GET.get("created_by", "").strip()
 
-    has_filters = any([date_from, date_to, wc_id, sp_id, shift_id])
+    has_filters = any([date_from, date_to, wc_id, sp_id, shift_id, creator_id])
 
     # Always show the most recent plans first, 20 per page; filters narrow
     # the same paginated list rather than gating it behind a first filter.
     plans = DailyPlan.objects.select_related(
-        "work_center", "subprocess", "shift"
+        "work_center", "subprocess", "shift", "created_by"
     ).order_by("-date")
-    if date_from: plans = plans.filter(date__gte=date_from)
-    if date_to:   plans = plans.filter(date__lte=date_to)
-    if wc_id:     plans = plans.filter(work_center_id=wc_id)
-    if sp_id:     plans = plans.filter(subprocess_id=sp_id)
-    if shift_id:  plans = plans.filter(shift_id=shift_id)
+    if date_from:  plans = plans.filter(date__gte=date_from)
+    if date_to:    plans = plans.filter(date__lte=date_to)
+    if wc_id:      plans = plans.filter(work_center_id=wc_id)
+    if sp_id:      plans = plans.filter(subprocess_id=sp_id)
+    if shift_id:   plans = plans.filter(shift_id=shift_id)
+    if creator_id: plans = plans.filter(created_by_id=creator_id)
     paginator = Paginator(plans, 20)
     page_obj  = paginator.get_page(request.GET.get("page"))
+
+    # Every user who has created at least one plan — not every user in the
+    # system — so the dropdown only ever lists real, useful options.
+    creators = (
+        User.objects.filter(plans_created__isnull=False)
+        .distinct().order_by("username")
+    )
 
     return render(request, "planning/plan_list.html", {
         "page_obj":     page_obj,
@@ -180,9 +190,10 @@ def daily_plan_list(request):
         "subprocesses": SubProcess.objects.select_related("work_center")
                                   .order_by("work_center__name", "name"),
         "shifts":       Shift.objects.filter(is_active=True).order_by("start_time"),
+        "creators":     creators,
         "filter":       {"date_from": date_from, "date_to": date_to,
                          "work_center": wc_id, "subprocess": sp_id,
-                         "shift": shift_id},
+                         "shift": shift_id, "created_by": creator_id},
         "can_write":    _role(request) in {"leader", "admin", "supervisor"},
         "can_delete_plan": _role(request) in {"leader", "admin", "supervisor"},
         "qs_prefix":    _qs_prefix(request),
