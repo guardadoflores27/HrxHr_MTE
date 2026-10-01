@@ -152,4 +152,42 @@ class RolePermissionMatrixTestCase(TestCase):
         valid = {r for r, _ in UserProfile.ROLE_CHOICES}
         self.assertEqual(
             valid, {"leader", "operator", "engineer", "supervisor", "admin"})
-    
+
+
+class UserListPaginationTestCase(TestCase):
+    """user_list and user_edit_list (/users/admin/users/ and .../edit/) must
+    paginate, 20 per page — the user table grows with every employee
+    onboarded, unlike the small fixed catalogs elsewhere in the app."""
+
+    def setUp(self):
+        self.admin = User.objects.create_user("pageadmin", password="pw12345")
+        UserProfile.objects.filter(user=self.admin).update(role="admin")
+        # 25 extra users so, together with the admin itself, there are 26 —
+        # enough for a second page at 20/page.
+        for i in range(25):
+            u = User.objects.create_user(f"pageuser{i:02d}", password="pw12345")
+            UserProfile.objects.filter(user=u).update(role="operator")
+
+        self.client = Client()
+        self.client.login(username="pageadmin", password="pw12345")
+
+    def test_user_list_first_page_has_20(self):
+        r = self.client.get("/users/admin/users/")
+        self.assertEqual(len(r.context["page_obj"]), 20)
+        self.assertEqual(r.context["page_obj"].paginator.count, 26)
+        self.assertEqual(r.context["page_obj"].paginator.num_pages, 2)
+
+    def test_user_list_second_page_has_remaining_6(self):
+        r = self.client.get("/users/admin/users/?page=2")
+        self.assertEqual(len(r.context["page_obj"]), 6)
+
+    def test_user_edit_list_first_page_has_20(self):
+        r = self.client.get("/users/admin/users/edit/")
+        self.assertEqual(len(r.context["page_obj"]), 20)
+        self.assertEqual(r.context["page_obj"].paginator.count, 26)
+
+    def test_pagination_preserves_role_filter(self):
+        r = self.client.get("/users/admin/users/?role=operator")
+        self.assertEqual(r.context["page_obj"].paginator.count, 25)
+        for u in r.context["page_obj"]:
+            self.assertEqual(u.profile.role, "operator")
