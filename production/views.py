@@ -96,7 +96,7 @@ def execution_list(request):
     wc_id     = request.GET.get("work_center", "").strip()
     sp_id     = request.GET.get("subprocess",  "").strip()
     shift_id  = request.GET.get("shift",       "").strip()
-    only_ot   = request.GET.get("overtime",    "").strip()\
+    only_ot   = request.GET.get("overtime",    "").strip()
 
     has_filters = any([date_from, date_to, wc_id, sp_id, shift_id, only_ot])
 
@@ -292,8 +292,15 @@ def execution_enter(request, plan_id):
                     pass
 
                 if validation_errors:
-                    for err in validation_errors:
-                        messages.error(request, err)
+                    # Queuing a Django message here would leak into whatever
+                    # page the user visits next, since an AJAX response never
+                    # renders {% if messages %} to consume it. The JSON
+                    # response below already carries this detail to the
+                    # on-page popup, so only queue it for the non-AJAX
+                    # (full page reload) path.
+                    if not is_ajax:
+                        for err in validation_errors:
+                            messages.error(request, err)
                     row_results.append({
                         "hp_id": hp.id,
                         "hour":  hp.hour.strftime("%I:%M %p"),
@@ -358,12 +365,13 @@ def execution_enter(request, plan_id):
                         for ev in event_formset.deleted_objects:
                             ev.delete()
                 except Exception as exc:  # pragma: no cover - defensive
-                    messages.error(
-                        request,
-                        f"Hour {hp.hour.strftime('%I:%M %p')}: "
-                        f"could not save due to an unexpected error. "
-                        f"No changes were made."
-                    )
+                    if not is_ajax:
+                        messages.error(
+                            request,
+                            f"Hour {hp.hour.strftime('%I:%M %p')}: "
+                            f"could not save due to an unexpected error. "
+                            f"No changes were made."
+                        )
                     row_results.append({
                         "hp_id": hp.id, "hour": hp.hour.strftime("%I:%M %p"),
                         "model": hp.model.name,
@@ -392,7 +400,7 @@ def execution_enter(request, plan_id):
                 execution = obj
 
             else:
-                if not events_valid:
+                if not events_valid and not is_ajax:
                     for ef in event_formset.forms:
                         for err in ef.non_field_errors():
                             messages.error(

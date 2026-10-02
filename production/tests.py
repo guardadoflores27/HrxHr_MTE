@@ -87,6 +87,28 @@ class ExecutionAjaxSaveTestCase(_TestCase):
         self.assertEqual(d["level"], "success")
         self.assertIn("updated successfully", d["message"])
 
+    def test_ajax_validation_error_does_not_leak_into_next_page(self):
+        # A row that fails validation over AJAX must report its error in the
+        # JSON response ONLY. Queuing it as a Django message too would leak
+        # into whatever page the user visits next, since an AJAX response
+        # never renders {% if messages %} to consume it (the bug found while
+        # manually testing Fase 3: a headcount-comment error kept reappearing
+        # on the Execution list page even after being fixed and re-saved).
+        r = self._post({f"hp-{self.hp.id}-actual_quantity": "5",
+                        f"hp-{self.hp.id}-scrap_quantity": "0"})
+        d = r.json()
+        self.assertFalse(d["ok"])
+        # The error IS present in the AJAX response...
+        row = [x for x in d["rows"] if not x["saved"]][0]
+        self.assertTrue(row["errors"])
+        # ...but nothing was left queued in the Django messages storage.
+        list_url = _reverse("production:execution_list")
+        list_response = self.client.get(list_url)
+        self.assertNotIn(
+            "comment is required",
+            "".join(str(m) for m in list_response.context["messages"]),
+        )
+
 
 class ExecutionUpdateWorkflowTestCase(_TestCase):
     """Covers the update workflow: stale comments are replaced when the actual

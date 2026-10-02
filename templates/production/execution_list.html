@@ -111,7 +111,7 @@
   </div>
 
   {# Active filter chips #}
-  {% if filter.date_from or filter.date_to or filter.work_center or filter.shift or filter.overtime %}
+  {% if filter.date_from or filter.date_to or filter.work_center or filter.subprocess or filter.shift or filter.overtime %}
   <div class="flex flex-wrap gap-2 mt-3 pt-3 border-t border-gray-100">
     <span class="text-xs text-gray-400">Active filters:</span>
     {% if filter.date_from %}
@@ -150,12 +150,12 @@
     {% if filter.overtime == "1" %}
     <span class="inline-flex items-center gap-1 bg-amber-50 text-amber-700 border border-amber-200
                  text-xs font-medium px-2 py-0.5 rounded-full">
-      <i class="fas fa-business-time text-[10px]"></i> Overtime only
+      <i class="fas fa-business-time text-[10px]"></i> Overtime Only
     </span>
     {% elif filter.overtime == "0" %}
     <span class="inline-flex items-center gap-1 bg-amber-50 text-amber-700 border border-amber-200
                  text-xs font-medium px-2 py-0.5 rounded-full">
-      <i class="fas fa-business-time text-[10px]"></i> Regular time only
+      <i class="fas fa-business-time text-[10px]"></i> Regular Time Only
     </span>
     {% endif %}
   </div>
