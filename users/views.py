@@ -1,4 +1,5 @@
 # users/views.py
+from django.core.paginator import Paginator
 from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.models import User
@@ -7,6 +8,18 @@ from django.contrib import messages
 from .models import UserProfile
 from .forms  import CreateUserForm, EditUserForm, EditProfileForm
 from .decorators import admin_only, PERMISSION_MATRIX
+
+
+def _qs_prefix(request):
+    """
+    Current GET querystring with "page" stripped out, plus a trailing "&"
+    (or "" when there's nothing else) — so pagination links can be built as
+    "?{{ qs_prefix }}page=N" without dropping whatever filters are active.
+    """
+    params = request.GET.copy()
+    params.pop("page", None)
+    encoded = params.urlencode()
+    return f"{encoded}&" if encoded else ""
 
 
 @login_required
@@ -46,10 +59,14 @@ def user_list(request):
     if role:
         users = users.filter(profile__role=role)
 
+    paginator = Paginator(users, 20)
+    page_obj  = paginator.get_page(request.GET.get("page"))
+
     return render(request, "users/user_list.html", {
-        "users":        users,
+        "page_obj":     page_obj,
         "role_choices": UserProfile.ROLE_CHOICES,
         "filter":       {"q": q, "role": role},
+        "qs_prefix":    _qs_prefix(request),
     })
 
 
@@ -126,9 +143,13 @@ def user_edit_list(request):
     if role:
         users = users.filter(profile__role=role)
 
+    paginator = Paginator(users, 20)
+    page_obj  = paginator.get_page(request.GET.get("page"))
+
     return render(request, "users/user_edit_list.html", {
-        "users":        users,
+        "page_obj":     page_obj,
         "role_choices": UserProfile.ROLE_CHOICES,
         "filter":       {"q": q, "role": role},
         "current_user": request.user,
+        "qs_prefix":    _qs_prefix(request),
     })

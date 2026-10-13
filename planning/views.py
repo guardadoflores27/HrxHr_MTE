@@ -5,6 +5,9 @@ import datetime as dt
 
 from django.contrib                 import messages
 from django.contrib.auth.decorators import login_required
+from django.contrib.auth.models     import User
+from django.core.paginator          import Paginator
+from django.db.models                import Prefetch
 from django.http                    import JsonResponse
 from django.shortcuts               import get_object_or_404, redirect, render
 from django.views.decorators.http   import require_POST
@@ -34,6 +37,17 @@ def _role(request):
 def _json_error(msg, status=400):
     return JsonResponse({"ok": False, "error": msg}, status=status)
 
+def _qs_prefix(request):
+    """
+    Current GET querystring with "page" stripped out, plus a trailing "&"
+    (or "" when there's nothing else) — so pagination links can be built as
+    "?{{ qs_prefix }}page=N" without dropping whatever filters are active.
+    """
+    params = request.GET.copy()
+    params.pop("page", None)
+    encoded = params.urlencode()
+    return f"{encoded}&" if encoded else ""
+
 def _json_ok(data=None):
     payload = {"ok": True}
     if data:
@@ -62,36 +76,54 @@ def dashboard(request):
     date_f   = request.GET.get("date", "").strip()
     model_id = request.GET.get("model", "").strip()
 
-    qs = HourlyPlan.objects.select_related(
-        "daily_plan__work_center", "daily_plan__subprocess",
-        "daily_plan__shift", "model"
-    ).order_by("-daily_plan__date", "hour", "model__name")
+    has_filters = any([wc_id, sp_id, shift_id, date_f, model_id])
 
-    if wc_id:    qs = qs.filter(daily_plan__work_center_id=wc_id)
-    if sp_id:    qs = qs.filter(daily_plan__subprocess_id=sp_id)
-    if shift_id: qs = qs.filter(daily_plan__shift_id=shift_id)
-    if date_f:   qs = qs.filter(daily_plan__date=date_f)
-    if model_id: qs = qs.filter(model_id=model_id)
-
-    # Each HourlyPlan row is already one model in one hour, so multiple
-    # models sharing the same hour simply produce multiple chart points —
-    # each one explicitly labeled with its model name for the tooltip.
+    # Filter-first: with no filter chosen yet, skip the query entirely
+    # instead of loading (and looping over) every HourlyPlan ever created.
+    # The template shows a "choose a filter" placeholder in this state.
     chart_labels, chart_planned, chart_actual = [], [], []
     chart_models, chart_dates, chart_diff = [], [], []
-    for hp in qs:
-        try:    actual = hp.hourlyexecution.actual_quantity
-        except HourlyExecution.DoesNotExist: actual = None
-        chart_labels.append(f"{hp.hour.strftime('%H:%M')} · {hp.model.name}")
-        chart_models.append(hp.model.name)
-        chart_dates.append(str(hp.daily_plan.date))
-        chart_planned.append(hp.planned_quantity)
-        chart_actual.append(actual)
-        chart_diff.append(
-            (actual - hp.planned_quantity) if actual is not None else None
-        )
-
+    page_obj = None
+    total_planned = total_actual = total_rows = 0
+    
+    if has_filters:
+        qs = HourlyPlan.objects.select_related(
+            "daily_plan__work_center", "daily_plan__subprocess",
+            "daily_plan__shift", "model"
+        ).order_by("-daily_plan__date", "hour", "model__name")
+    
+        if wc_id:    qs = qs.filter(daily_plan__work_center_id=wc_id)
+        if sp_id:    qs = qs.filter(daily_plan__subprocess_id=sp_id)
+        if shift_id: qs = qs.filter(daily_plan__shift_id=shift_id)
+        if date_f:   qs = qs.filter(daily_plan__date=date_f)
+        if model_id: qs = qs.filter(model_id=model_id)
+    
+        # Each HourlyPlan row is already one model in one hour, so multiple
+        # models sharing the same hour simply produce multiple chart points —
+        # each one explicitly labeled with its model name for the tooltip.
+        # Built from the WHOLE filtered set (not just the current table
+        # page) so the trend chart always reflects the full filter.
+        for hp in qs:
+            try:    actual = hp.hourlyexecution.actual_quantity
+            except HourlyExecution.DoesNotExist: actual = None
+            chart_labels.append(f"{hp.hour.strftime('%H:%M')} · {hp.model.name}")
+            chart_models.append(hp.model.name)
+            chart_dates.append(str(hp.daily_plan.date))
+            chart_planned.append(hp.planned_quantity)
+            chart_actual.append(actual)
+            chart_diff.append(
+                (actual - hp.planned_quantity) if actual is not None else None
+            )
+    
+        total_planned = sum(h.planned_quantity for h in qs)
+        total_actual  = sum(c for c in chart_actual if c is not None)
+        total_rows    = qs.count()
+    
+        paginator = Paginator(qs, 50)
+        page_obj  = paginator.get_page(request.GET.get("page"))
+    
     return render(request, "planning/dashboard.html", {
-        "data":          qs,
+        "page_obj":      page_obj,
         "work_centers":  WorkCenter.objects.filter(is_active=True),
         "subprocesses":  SubProcess.objects.select_related("work_center")
                                    .order_by("work_center__name", "name"),
@@ -99,10 +131,10 @@ def dashboard(request):
         "models":        Model.objects.all(),
         "filter":        {"wc": wc_id, "subprocess": sp_id,
                           "shift": shift_id, "date": date_f, "model": model_id},
-        "has_filters":   any([wc_id, sp_id, shift_id, date_f, model_id]),
-        "total_planned": sum(h.planned_quantity for h in qs),
-        "total_actual":  sum(c for c in chart_actual if c is not None),
-        "total_rows":    qs.count(),
+        "has_filters":   has_filters,
+        "total_planned": total_planned,
+        "total_actual":  total_actual,
+        "total_rows":    total_rows,
         "daily_plans":   DailyPlan.objects.count(),
         "chart_labels":  json.dumps(chart_labels),
         "chart_models":  json.dumps(chart_models),
@@ -110,6 +142,7 @@ def dashboard(request):
         "chart_planned": json.dumps(chart_planned),
         "chart_actual":  json.dumps(chart_actual),
         "chart_diff":    json.dumps(chart_diff),
+        "qs_prefix":     _qs_prefix(request),
     })
 
 
@@ -119,28 +152,51 @@ def dashboard(request):
 
 @login_required
 def daily_plan_list(request):
-    plans = DailyPlan.objects.select_related("work_center", "subprocess", "shift").order_by("-date")
-    date_from = request.GET.get("date_from", "").strip()
-    date_to   = request.GET.get("date_to",   "").strip()
-    wc_id     = request.GET.get("work_center","").strip()
-    sp_id     = request.GET.get("subprocess", "").strip()
-    shift_id  = request.GET.get("shift",      "").strip()
-    if date_from: plans = plans.filter(date__gte=date_from)
-    if date_to:   plans = plans.filter(date__lte=date_to)
-    if wc_id:     plans = plans.filter(work_center_id=wc_id)
-    if sp_id:     plans = plans.filter(subprocess_id=sp_id)
-    if shift_id:  plans = plans.filter(shift_id=shift_id)
+    date_from  = request.GET.get("date_from",  "").strip()
+    date_to    = request.GET.get("date_to",    "").strip()
+    wc_id      = request.GET.get("work_center","").strip()
+    sp_id      = request.GET.get("subprocess", "").strip()
+    shift_id   = request.GET.get("shift",      "").strip()
+    creator_id = request.GET.get("created_by", "").strip()
+
+    has_filters = any([date_from, date_to, wc_id, sp_id, shift_id, creator_id])
+
+    # Always show the most recent plans first, 20 per page; filters narrow
+    # the same paginated list rather than gating it behind a first filter.
+    plans = DailyPlan.objects.select_related(
+        "work_center", "subprocess", "shift", "created_by"
+    ).order_by("-date")
+    if date_from:  plans = plans.filter(date__gte=date_from)
+    if date_to:    plans = plans.filter(date__lte=date_to)
+    if wc_id:      plans = plans.filter(work_center_id=wc_id)
+    if sp_id:      plans = plans.filter(subprocess_id=sp_id)
+    if shift_id:   plans = plans.filter(shift_id=shift_id)
+    if creator_id: plans = plans.filter(created_by_id=creator_id)
+    paginator = Paginator(plans, 20)
+    page_obj  = paginator.get_page(request.GET.get("page"))
+
+    # Every user who has created at least one plan — not every user in the
+    # system — so the dropdown only ever lists real, useful options.
+    creators = (
+        User.objects.filter(plans_created__isnull=False)
+        .distinct().order_by("username")
+    )
+
     return render(request, "planning/plan_list.html", {
-        "plans":        plans,
+        "page_obj":     page_obj,
+        "has_filters":  has_filters,
+        "total_plans":  DailyPlan.objects.count(),
         "work_centers": WorkCenter.objects.filter(is_active=True).order_by("name"),
         "subprocesses": SubProcess.objects.select_related("work_center")
                                   .order_by("work_center__name", "name"),
         "shifts":       Shift.objects.filter(is_active=True).order_by("start_time"),
+        "creators":     creators,
         "filter":       {"date_from": date_from, "date_to": date_to,
                          "work_center": wc_id, "subprocess": sp_id,
-                         "shift": shift_id},
+                         "shift": shift_id, "created_by": creator_id},
         "can_write":    _role(request) in {"leader", "admin", "supervisor"},
         "can_delete_plan": _role(request) in {"leader", "admin", "supervisor"},
+        "qs_prefix":    _qs_prefix(request),
     })
 
 
@@ -692,7 +748,7 @@ def hourly_plan_board(request):
 
     plans_qs = DailyPlan.objects.select_related(
         "work_center", "subprocess", "shift"
-    ).prefetch_related("hourly_plans__model").order_by("date", "subprocess__name")
+    ).order_by("-date", "subprocess__name")
 
     if wc_id:    plans_qs = plans_qs.filter(work_center_id=wc_id)
     if sp_id:    plans_qs = plans_qs.filter(subprocess_id=sp_id)
@@ -702,9 +758,25 @@ def hourly_plan_board(request):
     if only_ot == "1":
         plans_qs = plans_qs.filter(hourly_plans__is_overtime=True).distinct()
 
+    # Show the 6 most recent plans by default, paginated; filters narrow the
+    # same paginated list. Paginate BEFORE prefetching each card's hourly
+    # rows, so that prefetch only ever runs for the plans on the current page.
+    paginator = Paginator(plans_qs, 6)
+    page_obj  = paginator.get_page(request.GET.get("page"))
+    plan_ids_on_page = [p.id for p in page_obj.object_list]
+    prefetch_qs = HourlyPlan.objects.select_related("model").order_by("hour")
+    plans_on_page = list(
+        DailyPlan.objects.filter(id__in=plan_ids_on_page)
+        .select_related("work_center", "subprocess", "shift")
+        .prefetch_related(Prefetch("hourly_plans", queryset=prefetch_qs))
+        .order_by("-date", "subprocess__name")
+    )
+
     board_cards = []
-    for plan in plans_qs:
-        raw_rows = plan.hourly_plans.select_related("model").order_by("hour")
+    for plan in plans_on_page:
+        # .all() (not a fresh filter/order_by) so this reads from the
+        # Prefetch cache above instead of issuing one query per plan.
+        raw_rows = plan.hourly_plans.all()
         enriched = []
         for r in raw_rows:
             h_dt  = dt.datetime.combine(dt.date.today(), r.hour)
@@ -733,6 +805,8 @@ def hourly_plan_board(request):
 
     return render(request, "planning/hourly_plan_board.html", {
         "board_cards":     board_cards,
+        "page_obj":        page_obj,
+        "qs_prefix":       _qs_prefix(request),
         "work_centers":    WorkCenter.objects.filter(is_active=True).order_by("name"),
         "subprocesses":    subprocesses,
         "shifts":          Shift.objects.filter(is_active=True).order_by("start_time"),
@@ -794,11 +868,15 @@ def model_list(request):
         (messages.success if created else messages.warning)(request, " ".join(parts))
         return redirect("planning:model_list")
 
+    paginator = Paginator(models_qs, 50)
+    page_obj  = paginator.get_page(request.GET.get("page"))
+
     return render(request, "planning/model_list.html", {
-        "models_qs": models_qs,
-        "search":    search,
-        "total":     Model.objects.count(),
-        "can_write": _role(request) in ("leader", "supervisor", "admin"),
+        "page_obj":   page_obj,
+        "search":     search,
+        "total":      Model.objects.count(),
+        "can_write":  _role(request) in ("leader", "supervisor", "admin"),
+        "qs_prefix":  _qs_prefix(request),
     })
 
 
@@ -846,3 +924,29 @@ def api_model_search(request):
         "models":        [{"id": m.id, "name": m.name} for m in models],
         "can_add_model": _role(request) in {"leader", "supervisor", "admin"},
     })
+
+
+@login_required
+@require_POST
+def api_model_create(request):
+    """
+    Creates a single Model from the "Model Not Found" popup on the Hourly
+    Plan screen, so Leader/Supervisor/Admin can add a missing model without
+    leaving the page (previously this sent them to the CSV-upload screen,
+    losing whatever hour/quantity they had already typed).
+    """
+    if _role(request) not in {"leader", "supervisor", "admin"}:
+        return _json_error("Permission denied.", 403)
+    try:
+        data = json.loads(request.body)
+    except json.JSONDecodeError:
+        return _json_error("Invalid JSON.")
+    
+    name = (data.get("name") or "").strip()
+    if not name:
+        return _json_error("Model name is required.")
+    if Model.objects.filter(name__iexact=name).exists():
+        return _json_error(f'"{name}" already exists in the catalog.')
+    
+    model = Model.objects.create(name=name)
+    return _json_ok({"id": model.id, "name": model.name})

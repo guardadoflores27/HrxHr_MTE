@@ -51,4 +51,5 @@ urlpatterns = [
     # ── General AJAX ──────────────────────────────────────────────────────────
     path("api/subprocesses/",  views.subprocess_by_workcenter, name="subprocess_by_workcenter"),
     path("api/models/search/", views.api_model_search,         name="api_model_search"),
+    path("api/models/create/", views.api_model_create,         name="api_model_create"),
 ]

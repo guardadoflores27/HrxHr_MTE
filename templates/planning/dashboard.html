@@ -129,17 +129,13 @@
 
 
 {# Plan vs Real chart #}
-{% if chart_labels != "[]" %}
+{% if not has_filters %}
 <div class="bg-white rounded-xl border border-gray-200 shadow-sm px-5 py-4 mb-6">
   <div class="flex items-center justify-between mb-4">
     <p class="text-sm font-semibold text-gray-700">
       <i class="fas fa-chart-bar mr-1.5 text-blue-500"></i>Plan vs Real — pieces progress
     </p>
   </div>
-  {% if has_filters %}
-  <canvas id="dashboardChart" height="80"></canvas>
-  {% else %}
-
   <div class="flex flex-col items-center justify-center py-12 text-center">
     <div class="w-12 h-12 rounded-full bg-blue-50 flex items-center justify-center mb-3">
       <i class="fas fa-filter text-blue-400"></i>
@@ -149,7 +145,15 @@
       Pick a Work Center, Subprocess, Shift, Date or Model below, then press Filter.
     </p>
   </div>
-  {% endif %}
+</div>
+{% elif chart_labels != "[]" %}
+<div class="bg-white rounded-xl border border-gray-200 shadow-sm px-5 py-4 mb-6">
+  <div class="flex items-center justify-between mb-4">
+    <p class="text-sm font-semibold text-gray-700">
+      <i class="fas fa-chart-bar mr-1.5 text-blue-500"></i>Plan vs Real — pieces progress
+    </p>
+  </div>
+  <canvas id="dashboardChart" height="80"></canvas>
 </div>
 {% endif %}
 
@@ -160,7 +164,23 @@
     <p class="text-xs text-gray-400 mono">{{ total_rows }} rows</p>
   </div>
 
-  {% if data %}
+  {% if not has_filters %}
+  <div class="flex flex-col items-center justify-center py-16 text-center">
+    <div class="w-12 h-12 rounded-full bg-blue-50 flex items-center justify-center mb-3">
+      <i class="fas fa-filter text-blue-400"></i>
+    </div>
+    <p class="text-sm font-semibold text-gray-600">Choose a filter to see records</p>
+    <p class="text-xs text-gray-400 mt-1">
+      Pick a Work Center, Subprocess, Shift, Date or Model above, then press Filter.
+    </p>
+    {% if daily_plans == 0 %}
+    <a href="{% url 'planning:daily_plan_create' %}"
+       class="mt-3 text-sm text-blue-600 hover:underline font-medium">
+      Create your first plan →
+    </a>
+    {% endif %}
+  </div>
+  {% elif page_obj %}
   <div class="overflow-x-auto">
     <table class="min-w-full text-sm">
       <thead>
@@ -180,7 +200,7 @@
       <tbody class="divide-y divide-gray-50">
         {# Each row below is one HourlyPlan = one model in one hour. Rows are #}
         {# never merged, so an hour with 3 models simply renders as 3 rows.   #}
-        {% for h in data %}
+        {% for h in page_obj %}
         {% with exec=h.hourlyexecution %}
         <tr class="transition-colors">
           <td class="px-4 py-2.5 font-medium text-gray-900 mono text-xs">{{ h.daily_plan.date }}</td>
@@ -228,16 +248,13 @@
       </tbody>
     </table>
   </div>
+  {% include "includes/pagination.html" with page_obj=page_obj qs_prefix=qs_prefix %}
   {% else %}
   <div class="flex flex-col items-center justify-center py-16 text-center">
     <div class="w-12 h-12 rounded-full bg-gray-100 flex items-center justify-center mb-3">
       <i class="fas fa-inbox text-gray-300 text-xl"></i>
     </div>
-    <p class="text-sm text-gray-400">No records found.</p>
-    <a href="{% url 'planning:daily_plan_create' %}"
-       class="mt-3 text-sm text-blue-600 hover:underline font-medium">
-      Create your first plan →
-    </a>
+    <p class="text-sm text-gray-400">No records match these filters.</p>
   </div>
   {% endif %}
 </div>

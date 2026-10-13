@@ -60,7 +60,7 @@
         </tr>
       </thead>
       <tbody class="divide-y divide-gray-50">
-        {% for u in users %}
+        {% for u in page_obj %}
         <tr class="transition {% if u == current_user %}opacity-60{% endif %}">
           <td class="px-5 py-3">
             <div class="flex items-center gap-2.5">
@@ -118,8 +118,9 @@
         {% endfor %}
       </tbody>
     </table>
+    {% include "includes/pagination.html" with page_obj=page_obj qs_prefix=qs_prefix %}
   </div>
 
-  <p class="text-xs text-gray-400 text-right">{{ users|length }} user{{ users|length|pluralize }} found</p>
+  <p class="text-xs text-gray-400 text-right">{{ page_obj.paginator.count }} user{{ page_obj.paginator.count|pluralize }} found</p>
 </div>
 {% endblock %}

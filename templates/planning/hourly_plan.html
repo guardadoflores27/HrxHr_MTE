@@ -838,22 +838,29 @@
         <i class="fas fa-circle-check mr-1"></i>You can add it
       </p>
       <p class="text-xs text-blue-600">
-        As a <strong>{{ request.user.profile.get_role_display }}</strong> you have permission
-        to create new models. Click "Add Model" to go to the model catalog and add it,
-        then come back to plan this hour.
+        As a(n) <strong>{{ request.user.profile.get_role_display }}</strong>, you have permission
+        to create new models. Confirm the name and it'll be added to the catalog, and used
+        for this hour right away.
       </p>
     </div>
-    <div class="flex gap-2">
+    <div class="text-left mb-2">
+      <label class="block text-xs font-semibold text-gray-600 mb-1">Model name</label>
+      <input type="text" id="nf-new-model-name"
+             class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm
+                    focus:border-blue-500 focus:ring-1 focus:outline-none">
+      <p id="nf-create-error" class="hidden text-[11px] text-red-500 font-semibold mt-1"></p>
+    </div>
+    <div class="flex gap-2 mt-3">
       <button onclick="document.getElementById('model-nf-modal').classList.add('hidden')"
               class="flex-1 border border-gray-200 text-gray-500 text-sm font-semibold
                      py-2.5 rounded-xl hover:bg-gray-50 transition">
         Cancel
       </button>
-      <a href="{% url 'planning:model_list' %}"
-         class="flex-1 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold
-                py-2.5 rounded-xl transition text-center">
+      <button type="button" id="nf-create-btn" onclick="createModelFromModal()"
+              class="flex-1 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold
+                     py-2.5 rounded-xl transition">
         <i class="fas fa-plus mr-1.5"></i>Add Model
-      </a>
+      </button>
     </div>
 
     {% else %}
@@ -911,6 +918,7 @@
 // ═══════════════════════════════════════════════════════════════════════════
 const PLAN_ID          = {{ plan.id }};
 const MODEL_SEARCH_URL = "{% url 'planning:api_model_search' %}";
+const MODEL_CREATE_URL = "{% url 'planning:api_model_create' %}";
 const ADD_ROW_URL      = "{% url 'planning:api_add_row' plan.id %}";
 const ADD_BLOCK_URL    = "{% url 'planning:api_add_block' plan.id %}";
 const EDIT_BLOCK_BASE  = "{% url 'planning:api_edit_block' plan.id 0 %}".replace("/0/", "/");
@@ -943,6 +951,66 @@ function postJSON(url, body) {
     headers: { "Content-Type": "application/json", "X-CSRFToken": CSRF },
     body:    JSON.stringify(body),
   }).then(r => r.json());
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// MODEL NOT FOUND → CREATE INLINE (no need to leave the Hourly Plan screen)
+// ═══════════════════════════════════════════════════════════════════════════
+// `pendingModelAdd` remembers which form triggered the modal, so once the
+// model is created we can drop its id/name back into that exact form and
+// re-run the same add action — the user never loses the hour/qty they'd
+// already typed. `apply` writes the new model into the form; `retry`
+// re-invokes that form's own submit function.
+let pendingModelAdd = null;
+
+function openModelNotFoundModal(query, applyFn, retryFn) {
+  pendingModelAdd = { apply: applyFn, retry: retryFn };
+  const nameInput = document.getElementById("nf-new-model-name");
+  const errEl     = document.getElementById("nf-create-error");
+  if (nameInput) nameInput.value = query || "";
+  if (errEl) errEl.classList.add("hidden");
+  document.getElementById("model-nf-modal").classList.remove("hidden");
+}
+
+function createModelFromModal() {
+  const nameInput = document.getElementById("nf-new-model-name");
+  const errEl     = document.getElementById("nf-create-error");
+  const btn       = document.getElementById("nf-create-btn");
+  const name      = (nameInput?.value || "").trim();
+
+  if (!name) {
+    errEl.textContent = "Enter a model name.";
+    errEl.classList.remove("hidden");
+    return;
+  }
+
+  btn.disabled = true;
+  const original = btn.innerHTML;
+  btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+
+  postJSON(MODEL_CREATE_URL, { name })
+    .then(data => {
+      btn.disabled  = false;
+      btn.innerHTML = original;
+      if (!data.ok) {
+        errEl.textContent = data.error || "Could not create the model.";
+        errEl.classList.remove("hidden");
+        return;
+      }
+      const pending = pendingModelAdd;
+      document.getElementById("model-nf-modal").classList.add("hidden");
+      pendingModelAdd = null;
+      if (pending) {
+        pending.apply(data.id, data.name);
+        pending.retry();
+      }
+    })
+    .catch(() => {
+      btn.disabled  = false;
+      btn.innerHTML = original;
+      errEl.textContent = "Network error. Please try again.";
+      errEl.classList.remove("hidden");
+    });
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -1043,7 +1111,14 @@ function wireAddRowButton(btn) {
 
     if (!modelId) {
       if (modelInp?.value.trim()) {
-        document.getElementById("model-nf-modal").classList.remove("hidden");
+        openModelNotFoundModal(
+          modelInp.value.trim(),
+          (id, name) => {
+            modelInp.value = name;
+            card.querySelector(".model-id-input").value = id;
+          },
+          () => btn.click()
+        );
       } else if (errEl) {
         errEl.textContent = "Please select a model.";
         errEl.classList.remove("hidden");
@@ -1571,8 +1646,15 @@ function saveOvertimeSlot(slotTime, uid, btn, label12) {
   const errEl   = document.getElementById(`${uid}-err`);
 
   if (!modelId) {
-    // Show model-not-found modal
-    document.getElementById("model-nf-modal").classList.remove("hidden");
+    const searchInp = document.getElementById(`${uid}-search`);
+    openModelNotFoundModal(
+      searchInp?.value.trim(),
+      (id, name) => {
+        searchInp.value = name;
+        document.getElementById(`${uid}-model-id`).value = id;
+      },
+      () => saveOvertimeSlot(slotTime, uid, btn, label12)
+    );
     return;
   }
   if (!qty || parseInt(qty) < 0) {

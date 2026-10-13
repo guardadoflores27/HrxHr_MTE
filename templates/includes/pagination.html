@@ -1,0 +1,55 @@
+{# templates/includes/pagination.html #}
+{# ─────────────────────────────────────────────────────────────────────────── #}
+{# Shared pager controls. Include with:                                       #}
+{#   {% include "includes/pagination.html" with page_obj=page_obj qs_prefix=qs_prefix %} #}
+{# The view must pass `qs_prefix` — the current GET querystring with "page"   #}
+{# removed and a trailing "&" (or "") — so filters survive page navigation.   #}
+{# ─────────────────────────────────────────────────────────────────────────── #}
+{% if page_obj.paginator.num_pages > 1 %}
+<div class="flex items-center justify-between px-5 py-3 border-t border-gray-100 text-xs text-gray-500">
+  <span>
+    Page <span class="font-semibold text-gray-700">{{ page_obj.number }}</span>
+    of {{ page_obj.paginator.num_pages }}
+    · {{ page_obj.paginator.count }} total
+  </span>
+  <div class="flex items-center gap-1.5">
+    {% if page_obj.has_previous %}
+    <a href="?{{ qs_prefix }}page=1"
+       class="px-2.5 py-1.5 rounded-lg border border-gray-200 hover:bg-gray-50 transition"
+       title="First page">
+      <i class="fas fa-angles-left"></i>
+    </a>
+    <a href="?{{ qs_prefix }}page={{ page_obj.previous_page_number }}"
+       class="px-3 py-1.5 rounded-lg border border-gray-200 hover:bg-gray-50 transition">
+      Previous
+    </a>
+    {% else %}
+    <span class="px-2.5 py-1.5 rounded-lg border border-gray-100 text-gray-300 cursor-not-allowed">
+      <i class="fas fa-angles-left"></i>
+    </span>
+    <span class="px-3 py-1.5 rounded-lg border border-gray-100 text-gray-300 cursor-not-allowed">
+      Previous
+    </span>
+    {% endif %}
+
+    {% if page_obj.has_next %}
+    <a href="?{{ qs_prefix }}page={{ page_obj.next_page_number }}"
+       class="px-3 py-1.5 rounded-lg border border-gray-200 hover:bg-gray-50 transition">
+      Next
+    </a>
+    <a href="?{{ qs_prefix }}page={{ page_obj.paginator.num_pages }}"
+       class="px-2.5 py-1.5 rounded-lg border border-gray-200 hover:bg-gray-50 transition"
+       title="Last page">
+      <i class="fas fa-angles-right"></i>
+    </a>
+    {% else %}
+    <span class="px-3 py-1.5 rounded-lg border border-gray-100 text-gray-300 cursor-not-allowed">
+      Next
+    </span>
+    <span class="px-2.5 py-1.5 rounded-lg border border-gray-100 text-gray-300 cursor-not-allowed">
+      <i class="fas fa-angles-right"></i>
+    </span>
+    {% endif %}
+  </div>
+</div>
+{% endif %}
