@@ -17,6 +17,7 @@ from planning.models import HourlyPlan
 from production.models import HourlyExecution
 from .day_service import units_to_pieces, classify_hour, _fmt
 from . import services
+from .services import yield_pct_of
 
 
 # ── Period → date range ───────────────────────────────────────────────────────
@@ -67,7 +68,7 @@ def build_period_report(period, anchor, **filters):
     start, end, label = resolve_range(period, anchor)
     qs = _executions_in_range(start, end, **filters)
 
-    tot_planned_u = tot_actual_u = tot_scrap_u = 0
+    tot_planned_u = tot_actual_u = tot_scrap_u = tot_good_u = 0
     tot_planned_p = tot_actual_p = 0.0
     scheduled_hours = 0
     overtime_hours  = 0
@@ -86,6 +87,8 @@ def build_period_report(period, anchor, **filters):
         tot_planned_u += planned_u
         tot_actual_u  += actual_u
         tot_scrap_u   += ex.scrap_quantity
+        # Good units per row, clamped at 0 (same rule as services.good_quantity).
+        tot_good_u    += max(0, actual_u - ex.scrap_quantity)
         tot_planned_p += planned_p
         tot_actual_p  += actual_p
         scheduled_hours += 1
@@ -132,6 +135,8 @@ def build_period_report(period, anchor, **filters):
         "totals": {
             "planned_units": tot_planned_u, "actual_units": tot_actual_u,
             "scrap_units": tot_scrap_u,
+            "good_units": tot_good_u,
+            "yield_pct": yield_pct_of(tot_actual_u, tot_scrap_u, tot_good_u),
             "planned_pieces": _fmt(tot_planned_p),
             "actual_pieces": _fmt(tot_actual_p),
             "difference_units": tot_actual_u - tot_planned_u,

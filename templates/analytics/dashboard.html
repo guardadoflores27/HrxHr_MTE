@@ -78,6 +78,7 @@
     {% include "analytics/_kpi_card.html" with label="Avg Duration" value=kpis.average_duration_per_event suffix=" min" icon="fa-stopwatch" tone="cyan" help="Average length of a single operational event, in minutes. Total downtime divided by the number of events." %}
     {% include "analytics/_kpi_card.html" with label="Plan Achieved Hrs" value=kpis.plan_achieved_hours suffix="" icon="fa-circle-check" tone="emerald" help="Number of production hours where the actual quantity met or exceeded the planned quantity." %}
     {% include "analytics/_kpi_card.html" with label="Total Scrap" value=kpis.scrap_quantity suffix=" u" icon="fa-trash-can" tone="rose" help="Total scrap recorded across the filtered scope, in units. Scrap is captured per hour alongside the actual quantity and is NOT counted as good production." %}
+    {% include "analytics/_kpi_card.html" with label="Yield" value=kpis.yield_pct suffix="%" icon="fa-circle-check" tone="emerald" help="Share of the units produced that were good, not scrap. Calculated as (actual units minus scrap units) divided by actual units. Rework is not counted. Shows a dash when nothing was produced." %}
   </div>
 
   {# ── Charts ──────────────────────────────────────────────────────────── #}

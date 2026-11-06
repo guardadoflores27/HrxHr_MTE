@@ -108,12 +108,13 @@
   {# ── Production ────────────────────────────────────────────────────── #}
   <div>
     <h3 class="text-[11px] font-bold uppercase tracking-widest text-slate-400 mb-2">Production</h3>
-    <div class="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-3">
+    <div class="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3">
     {% include "analytics/_kpi_card.html" with label="Planned Pieces" value=report.totals.planned_pieces suffix="" icon="fa-clipboard-list" tone="blue" help="Total pieces planned for this period. Stored quantities are in units and divided by the subprocess conversion factor to give pieces." %}
     {% include "analytics/_kpi_card.html" with label="Actual Pieces" value=report.totals.actual_pieces suffix="" icon="fa-boxes-stacked" tone="emerald" help="Total pieces actually produced in this period, converted from units using the same conversion factor as the plan." %}
     {% include "analytics/_kpi_card.html" with label="Completion" value=report.totals.completion_pct suffix="%" icon="fa-bullseye" tone="violet" help="How much of the plan was fulfilled: actual divided by planned, as a percentage. Above 100% means the plan was exceeded." %}
     {% include "analytics/_kpi_card.html" with label="Difference" value=report.totals.difference_pieces suffix="" icon="fa-scale-balanced" tone="amber" help="Actual pieces minus planned pieces. A negative number means the period finished below plan." %}
     {% include "analytics/_kpi_card.html" with label="Total Scrap" value=report.totals.scrap_units suffix=" u" icon="fa-trash-can" tone="rose" help="Total scrap recorded across this period, in units. Scrap is captured per hour alongside the actual quantity and is NOT counted as good production." %}
+    {% include "analytics/_kpi_card.html" with label="Yield" value=report.totals.yield_pct suffix="%" icon="fa-circle-check" tone="emerald" help="Share of the units produced that were good, not scrap. Calculated as (actual units minus scrap units) divided by actual units. Rework is not counted. Shows a dash when nothing was produced." %}
     </div>
   </div>
 

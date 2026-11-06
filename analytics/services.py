@@ -14,9 +14,9 @@
 # All functions accept the same keyword filters and are safe to call with none.
 # ─────────────────────────────────────────────────────────────────────────────
 
-from django.db.models import Sum, Count, Avg, F, Q, IntegerField
+from django.db.models import Sum, Count, Avg, F, Q, IntegerField, Value
 from django.db.models.functions import (
-    TruncDay, TruncWeek, TruncMonth, TruncYear,
+    TruncDay, TruncWeek, TruncMonth, TruncYear, Greatest,
 )
 
 from production.models import ExecutionEvent, HourlyExecution
@@ -222,6 +222,47 @@ def planned_vs_actual(**f):
     }
 
 
+# ─── Yield (quality) ─────────────────────────────────────────────────────────
+#
+# Definition confirmed with the client: Yield = good pieces ÷ total pieces
+# produced, with rework NOT counted. `actual_quantity` is the TOTAL produced
+# (the entry form rejects scrap > actual, so scrap is a subset of actual) and
+# `scrap_quantity` is the rejected part, so good = actual − scrap.
+#
+# It is a ratio of two quantities in the SAME unit, so it is computed on stored
+# units: converting to pieces first would change nothing and only add rounding.
+# Good quantity is clamped per row at 0, so one inconsistent row (e.g. scrap
+# left on an hour whose actual was forced to 0) can never drag the total below
+# what was really produced or push Yield negative.
+
+def yield_pct_of(actual_units, scrap_units, good_units=None):
+    """Pure Yield % from already-summed units. None when nothing was produced.
+
+    `good_units` is the sum of per-row (actual − scrap) clamped at 0; callers
+    that only have totals may omit it and it is derived (clamped at 0).
+    """
+    actual = actual_units or 0
+    if actual <= 0:
+        return None
+    if good_units is None:
+        good_units = max(0, actual - (scrap_units or 0))
+    return round(good_units / actual * 100, 1)
+
+
+def good_quantity(**f):
+    """Good units over the window: Σ max(actual − scrap, 0) per execution row."""
+    return executions_qs(**f).aggregate(
+        g=Sum(Greatest(F("actual_quantity") - F("scrap_quantity"), Value(0),
+                       output_field=IntegerField()))
+    )["g"] or 0
+
+
+def yield_pct(**f):
+    """Yield % = good units ÷ actual units × 100 over the window (None if 0)."""
+    pva = planned_vs_actual(**f)
+    return yield_pct_of(pva["actual"], pva["scrap"], good_quantity(**f))
+
+
 def plan_achievement_pct(**f):
     """Plan Achievement % = actual / planned × 100 over the window."""
     pva = planned_vs_actual(**f)
@@ -243,6 +284,7 @@ def plan_achieved_hours(**f):
 def kpi_summary(**f):
     """Every headline KPI in a single dict — feeds the KPI cards."""
     pva = planned_vs_actual(**f)
+    good = good_quantity(**f)
     return {
         "downtime_minutes":          downtime_minutes(**f),
         "planned_downtime_minutes":  planned_downtime_minutes(**f),
@@ -257,6 +299,8 @@ def kpi_summary(**f):
         "planned_quantity":          pva["planned"],
         "actual_quantity":           pva["actual"],
         "scrap_quantity":            pva["scrap"],
+        "good_quantity":             good,
+        "yield_pct":                 yield_pct_of(pva["actual"], pva["scrap"], good),
         "plan_achievement_pct":      plan_achievement_pct(**f),
         "plan_achieved_hours":       plan_achieved_hours(**f),
     }

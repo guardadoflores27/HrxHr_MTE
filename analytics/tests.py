@@ -705,7 +705,7 @@ class DayWorkingTimeTestCase(TestCase):
             self.assertNotEqual(i, -1, f"{label} card missing")
             seg = html[i:i + 800]
             m = re.search(
-                r'text-2xl font-bold text-slate-800 mono">\s*(.+?)\s*</span>',
+                r'font-bold text-slate-800 mono[^"]*">\s*(.+?)\s*</span>',
                 seg, re.S)
             self.assertIsNotNone(m, f"{label} has no value node")
             self.assertNotEqual(m.group(1).strip(), "—",
@@ -942,3 +942,127 @@ class DashboardCleanupTestCase(TestCase):
             self.assertIn("data-wc=", html, f"{url} options not tagged")
             self.assertIn("Dependent filter: Work Center", html,
                           f"{url} missing the dependent-filter script")
+
+class YieldTestCase(TestCase):
+    """Fase 4 — Yield = good units ÷ total units produced (rework not counted).
+    good = actual − scrap, per row clamped at 0. Must agree across the
+    Analytics KPIs, the Day report and the Period report."""
+
+    def setUp(self):
+        import random
+        s = str(random.randint(10000, 99999))
+        self.u = User.objects.create_user("yld" + s, password="pw")
+        self.wc = WorkCenter.objects.create(name="WC-YLD" + s)
+        spt = SubProcessType.objects.create(
+            name="T-YLD" + s, applies_to="reactores", units_per_piece=1)
+        self.sp = SubProcess.objects.create(
+            work_center=self.wc, name="SP-YLD" + s, subprocess_type=spt)
+        self.shift = Shift.objects.create(
+            name="YLD" + s, code="Y" + s[:3],
+            start_time=dt.time(6), end_time=dt.time(14), is_active=True)
+        self.plan = DailyPlan.objects.create(
+            date=dt.date(2026, 12, 14), work_center=self.wc,
+            subprocess=self.sp, headcount=5, shift=self.shift,
+            operator=self.u, created_by=self.u)
+        self.model = PlanningModel.objects.create(name="YLD Model" + s)
+        self.hp1 = HourlyPlan.objects.create(
+            daily_plan=self.plan, hour=dt.time(8), model=self.model,
+            planned_quantity=10)
+        self.hp2 = HourlyPlan.objects.create(
+            daily_plan=self.plan, hour=dt.time(9), model=self.model,
+            planned_quantity=10)
+        HourlyExecution.objects.create(hourly_plan=self.hp1,
+                                       actual_quantity=10, scrap_quantity=2)
+        HourlyExecution.objects.create(hourly_plan=self.hp2,
+                                       actual_quantity=10, scrap_quantity=0)
+        self.client = Client()
+        self.client.login(username=self.u.username, password="pw")
+
+    # ── pure helper ──────────────────────────────────────────────────────
+    def test_yield_pct_of_basic(self):
+        self.assertEqual(services.yield_pct_of(20, 2), 90.0)
+        self.assertEqual(services.yield_pct_of(20, 0), 100.0)
+        self.assertEqual(services.yield_pct_of(20, 20), 0.0)
+
+    def test_yield_pct_of_none_when_nothing_produced(self):
+        self.assertIsNone(services.yield_pct_of(0, 0))
+        self.assertIsNone(services.yield_pct_of(None, 5))
+
+    def test_yield_pct_of_clamps_negative_good(self):
+        self.assertEqual(services.yield_pct_of(5, 9), 0.0)
+
+    # ── services / reports agree ─────────────────────────────────────────
+    def test_kpi_summary_yield(self):
+        k = services.kpi_summary(work_center_id=self.wc.id)
+        self.assertEqual(k["good_quantity"], 18)
+        self.assertEqual(k["yield_pct"], 90.0)
+        self.assertEqual(services.good_quantity(work_center_id=self.wc.id), 18)
+        self.assertEqual(services.yield_pct(work_center_id=self.wc.id), 90.0)
+
+    def test_day_and_period_match_kpi(self):
+        from analytics import day_service, period_service as ps
+        day = day_service.build_day_report(self.plan)["totals"]
+        per = ps.build_period_report("month", dt.date(2026, 12, 14),
+                                     work_center_id=self.wc.id)["totals"]
+        self.assertEqual(day["good_units"], 18)
+        self.assertEqual(per["good_units"], 18)
+        self.assertEqual(day["yield_pct"], 90.0)
+        self.assertEqual(per["yield_pct"], 90.0)
+
+    def test_orphan_scrap_row_does_not_skew_yield(self):
+        """A row with actual 0 but leftover scrap must contribute 0 good units,
+        not a negative number that drags the yield down."""
+        from analytics import day_service
+        hp3 = HourlyPlan.objects.create(
+            daily_plan=self.plan, hour=dt.time(10), model=self.model,
+            planned_quantity=0)
+        HourlyExecution.objects.create(hourly_plan=hp3, actual_quantity=0,
+                                       scrap_quantity=5)
+        self.assertEqual(services.good_quantity(work_center_id=self.wc.id), 18)
+        t = day_service.build_day_report(self.plan)["totals"]
+        self.assertEqual(t["good_units"], 18)
+
+    def test_yield_none_when_no_production(self):
+        HourlyExecution.objects.all().delete()
+        k = services.kpi_summary(work_center_id=self.wc.id)
+        self.assertIsNone(k["yield_pct"])
+
+    def test_yield_respects_subprocess_filter(self):
+        import random
+        s2 = str(random.randint(10000, 99999))
+        spt2 = SubProcessType.objects.create(
+            name="T2-YLD" + s2, applies_to="reactores", units_per_piece=1)
+        other_sp = SubProcess.objects.create(
+            work_center=self.wc, name="OTHER-YLD" + s2, subprocess_type=spt2)
+        other_plan = DailyPlan.objects.create(
+            date=dt.date(2026, 12, 14), work_center=self.wc,
+            subprocess=other_sp, headcount=5, shift=self.shift)
+        hp = HourlyPlan.objects.create(daily_plan=other_plan, hour=dt.time(8),
+                                       model=self.model, planned_quantity=10)
+        HourlyExecution.objects.create(hourly_plan=hp, actual_quantity=10,
+                                       scrap_quantity=10)
+        k = services.kpi_summary(subprocess_id=self.sp.id)
+        self.assertEqual(k["yield_pct"], 90.0)
+
+    # ── presentation ─────────────────────────────────────────────────────
+    def test_dashboards_render_yield_card(self):
+        r = self.client.get("/analytics/")
+        self.assertContains(r, "Yield")
+        r = self.client.get("/analytics/period/?period=month&anchor=2026-12-14")
+        self.assertContains(r, "Yield")
+
+    def test_exports_contain_yield(self):
+        import io
+        from openpyxl import load_workbook
+        from analytics import day_service, period_service, export_service
+        day_rep = day_service.build_day_report(self.plan)
+        per_rep = period_service.build_period_report(
+            "month", dt.date(2026, 12, 14), work_center_id=self.wc.id)
+        for content in (export_service.day_report_to_excel(day_rep),
+                        export_service.period_report_to_excel(per_rep)):
+            wb = load_workbook(io.BytesIO(content))
+            labels = [str(r[0].value) for r in wb.active.iter_rows(min_col=1, max_col=1)
+                      if r[0].value]
+            self.assertTrue(any("Yield" in l for l in labels))
+        self.assertTrue(export_service.day_report_to_pdf(day_rep)[:5] == b"%PDF-")
+        self.assertTrue(export_service.period_report_to_pdf(per_rep)[:5] == b"%PDF-")

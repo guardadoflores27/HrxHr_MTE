@@ -15,6 +15,7 @@ from django.db.models import Sum, Prefetch
 
 from planning.models import DailyPlan, HourlyPlan
 from production.models import HourlyExecution, ExecutionEvent
+from .services import yield_pct_of
 
 
 # ── Comment classification ────────────────────────────────────────────────────
@@ -116,7 +117,7 @@ def build_day_report(plan):
     }
 
     hourly_rows = []
-    tot_planned_u = tot_actual_u = tot_scrap_u = 0
+    tot_planned_u = tot_actual_u = tot_scrap_u = tot_good_u = 0
     pending_hours = 0
     model_acc = {}   # model name -> {planned_u, actual_u}
 
@@ -133,6 +134,8 @@ def build_day_report(plan):
         tot_planned_u += planned_u
         tot_actual_u  += (actual_u or 0)
         tot_scrap_u   += scrap_u
+        # Good units per row, clamped at 0 (same rule as services.good_quantity).
+        tot_good_u    += max(0, (actual_u or 0) - scrap_u)
         if not captured and planned_u > 0:
             pending_hours += 1
 
@@ -230,6 +233,8 @@ def build_day_report(plan):
             "planned_units":  tot_planned_u,
             "actual_units":   tot_actual_u,
             "scrap_units":    tot_scrap_u,
+            "good_units":     tot_good_u,
+            "yield_pct":      yield_pct_of(tot_actual_u, tot_scrap_u, tot_good_u),
             "planned_pieces": units_to_pieces(tot_planned_u, factor),
             "actual_pieces":  units_to_pieces(tot_actual_u, factor),
             "difference_units":  tot_actual_u - tot_planned_u,

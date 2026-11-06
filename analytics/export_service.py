@@ -101,6 +101,8 @@ def day_report_to_excel(report):
         ("Planned (units)", t["planned_units"]), ("Actual (units)", t["actual_units"]),
         ("Planned (pieces)", t["planned_pieces"]), ("Actual (pieces)", t["actual_pieces"]),
         ("Scrap (units)", t["scrap_units"]),
+        ("Good (units)", t["good_units"]),
+        ("Yield %", t["yield_pct"]),
         ("Difference (pieces)", t["difference_pieces"]),
         ("Completion %", t["completion_pct"]), ("Head Count", t["headcount"]),
     ]))
@@ -140,6 +142,8 @@ def period_report_to_excel(report):
         ("Planned (units)", t["planned_units"]), ("Actual (units)", t["actual_units"]),
         ("Planned (pieces)", t["planned_pieces"]), ("Actual (pieces)", t["actual_pieces"]),
         ("Scrap (units)", t["scrap_units"]),
+        ("Good (units)", t["good_units"]),
+        ("Yield %", t["yield_pct"]),
         ("Difference (pieces)", t["difference_pieces"]),
         ("Completion %", t["completion_pct"]),
     ]))
@@ -241,10 +245,10 @@ def day_report_to_pdf(report):
 
     story.append(Paragraph("Totals", styles["Section"]))
     story.append(_data_table(
-        ["Planned (pc)", "Actual (pc)", "Scrap (u)", "Difference (pc)", "Completion %", "Head Count"],
-        [[t["planned_pieces"], t["actual_pieces"], t["scrap_units"],
+        ["Planned (pc)", "Actual (pc)", "Scrap (u)", "Yield %", "Difference (pc)", "Completion %", "Head Count"],
+        [[t["planned_pieces"], t["actual_pieces"], t["scrap_units"], _pct(t["yield_pct"]),
           t["difference_pieces"], _pct(t["completion_pct"]), t["headcount"]]],
-        [width/6.0]*6))
+        [width/7.0]*7))
     story.append(Spacer(1, 8))
 
     story.append(Paragraph("Hourly Detail", styles["Section"]))
@@ -294,10 +298,10 @@ def period_report_to_pdf(report):
 
     story.append(Paragraph("Totals", styles["Section"]))
     story.append(_data_table(
-        ["Planned (pc)", "Actual (pc)", "Scrap (u)", "Difference (pc)", "Completion %"],
-        [[t["planned_pieces"], t["actual_pieces"], t["scrap_units"],
+        ["Planned (pc)", "Actual (pc)", "Scrap (u)", "Yield %", "Difference (pc)", "Completion %"],
+        [[t["planned_pieces"], t["actual_pieces"], t["scrap_units"], _pct(t["yield_pct"]),
           t["difference_pieces"], _pct(t["completion_pct"])]],
-        [width/5.0]*5))
+        [width/6.0]*6))
     story.append(Spacer(1, 8))
 
     story.append(Paragraph("Working Hours", styles["Section"]))

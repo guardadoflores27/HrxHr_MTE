@@ -4,14 +4,14 @@
 <div class="group relative bg-white rounded-xl border border-slate-200 p-4 flex flex-col gap-1
             {% if help %}cursor-help hover:border-slate-300 transition-colors{% endif %}"
      {% if help %}title="{{ help }}"{% endif %}>
-  <div class="flex items-center justify-between">
+  <div class="flex items-start justify-between gap-2">
     <span class="text-[11px] font-semibold uppercase tracking-wide text-slate-500 flex items-center gap-1">
       {{ label }}
       {% if help %}<i class="fas fa-circle-info text-[9px] text-slate-300 group-hover:text-slate-400"></i>{% endif %}
     </span>
-    <i class="fas {{ icon }} text-{{ tone }}-500"></i>
+    <i class="fas {{ icon }} text-{{ tone }}-500 shrink-0 mt-0.5"></i>
   </div>
-  <span class="text-2xl font-bold text-slate-800 mono">
+  <span class="text-xl xl:text-2xl font-bold text-slate-800 mono whitespace-nowrap">
     {% if value is None %}—{% else %}{{ value }}{{ suffix }}{% endif %}
   </span>
 
