@@ -1,0 +1,28 @@
+{# Plan vs real downtime table. Params: title, info, rows, first_label, key (row key shown in first column) #}
+<div class="bg-white rounded-xl border border-slate-200">
+  <h3 class="rounded-t-xl text-sm font-semibold text-slate-700 px-5 py-3 border-b border-slate-100">{{ title }}{% include "analytics/_info.html" with text=info %}</h3>
+  <div class="overflow-x-auto rounded-b-xl">
+    <table class="min-w-full text-xs">
+      <thead class="bg-slate-50 text-slate-500 uppercase">
+        <tr>
+          <th class="px-3 py-2 text-left">{{ first_label }}</th>
+          <th class="px-3 py-2 text-right">Plan (min)</th>
+          <th class="px-3 py-2 text-right">Real (min)</th>
+          <th class="px-3 py-2 text-right">Variance (min)</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-slate-50">
+        {% for r in rows %}
+        <tr>
+          <td class="px-3 py-2 font-medium">{{ r.label }}</td>
+          <td class="px-3 py-2 text-right font-mono">{{ r.plan_min }}</td>
+          <td class="px-3 py-2 text-right font-mono">{{ r.real_min }}</td>
+          <td class="px-3 py-2 text-right font-mono font-semibold {% if r.variance_min > 0 %}text-red-600{% elif r.variance_min < 0 %}text-emerald-600{% else %}text-slate-400{% endif %}">{% if r.variance_min > 0 %}+{% endif %}{{ r.variance_min }}</td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="4" class="px-3 py-6 text-center text-slate-400">No downtime planned or recorded.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>

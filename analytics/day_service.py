@@ -13,9 +13,10 @@ import datetime as dt
 
 from django.db.models import Sum, Prefetch
 
-from planning.models import DailyPlan, HourlyPlan
+from planning.models import DailyPlan, HourlyPlan, HourlyPlanBlock
 from production.models import HourlyExecution, ExecutionEvent
-from .services import yield_pct_of
+from . import services
+from .services import yield_pct_of, downtime_variance
 
 
 # ── Comment classification ────────────────────────────────────────────────────
@@ -116,6 +117,28 @@ def build_day_report(plan):
         for e in HourlyExecution.objects.filter(hourly_plan__daily_plan=plan)
     }
 
+    # Downtime PLAN (Time Blocks) vs REAL (Execution Events) per hour. A block
+    # belongs to the first HourlyPlan of its slot (same rule as block_bridge);
+    # a block whose slot has no hour is left out, since it can never become an
+    # event. See services.plan_blocks_qs.
+    first_hp_by_hour = {}
+    for hp in hours:
+        first_hp_by_hour.setdefault(hp.hour, hp.id)
+    plan_dt_by_hp = {}
+    for slot, minutes in (HourlyPlanBlock.objects.filter(daily_plan=plan)
+                          .values_list("slot_time", "minutes")):
+        hp_id = first_hp_by_hour.get(slot)
+        if hp_id is not None:
+            plan_dt_by_hp[hp_id] = plan_dt_by_hp.get(hp_id, 0) + (minutes or 0)
+    real_dt_by_hp = {
+        r["execution__hourly_plan_id"]: r["m"] or 0
+        for r in (ExecutionEvent.objects
+                  .filter(execution__hourly_plan__daily_plan=plan)
+                  .values("execution__hourly_plan_id")
+                  .annotate(m=Sum("duration_minutes")))
+    }
+    tot_plan_dt = tot_real_dt = 0
+
     hourly_rows = []
     tot_planned_u = tot_actual_u = tot_scrap_u = tot_good_u = 0
     pending_hours = 0
@@ -138,6 +161,11 @@ def build_day_report(plan):
         tot_good_u    += max(0, (actual_u or 0) - scrap_u)
         if not captured and planned_u > 0:
             pending_hours += 1
+
+        plan_dt = plan_dt_by_hp.get(hp.id, 0)
+        real_dt = real_dt_by_hp.get(hp.id, 0)
+        tot_plan_dt += plan_dt
+        tot_real_dt += real_dt
 
         acc = model_acc.setdefault(hp.model.name, {"planned_u": 0, "actual_u": 0})
         acc["planned_u"] += planned_u
@@ -163,6 +191,9 @@ def build_day_report(plan):
             "headcount_comment": (ex.headcount_comment if captured else ""),
             "comment":     ex.active_comment if ex else "",
             "hour_status": classify_hour(planned_u, actual_u),
+            "plan_downtime_min": plan_dt,
+            "real_downtime_min": real_dt,
+            "downtime_variance_min": downtime_variance(plan_dt, real_dt),
         })
 
     completion = round(tot_actual_u / tot_planned_u * 100, 1) if tot_planned_u else None
@@ -244,6 +275,16 @@ def build_day_report(plan):
             "pending_hours":  pending_hours,
         },
         "working_time":  working_time,
+        "downtime_plan_vs_real": {
+            "plan_min":     tot_plan_dt,
+            "real_min":     tot_real_dt,
+            "variance_min": downtime_variance(tot_plan_dt, tot_real_dt),
+            "by_category":  services.category_plan_vs_real(
+                HourlyPlanBlock.objects.filter(
+                    daily_plan=plan, slot_time__in=list(first_hp_by_hour)),
+                ExecutionEvent.objects.filter(
+                    execution__hourly_plan__daily_plan=plan)),
+        },
         "model_summary": model_summary,
         "chart": {
             # Grouped bar: planned vs actual PIECES per hour, 12-h labels.

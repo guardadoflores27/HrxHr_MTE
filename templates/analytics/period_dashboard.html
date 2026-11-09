@@ -125,8 +125,25 @@
     {% include "analytics/_kpi_card.html" with label="Scheduled Hrs" value=report.working_hours.scheduled_hours suffix="" icon="fa-clock" tone="slate" help="Number of production hours captured in this period, including any overtime hours." %}
     {% include "analytics/_kpi_card.html" with label="Real Working Hrs" value=report.working_hours.real_working_hours suffix="" icon="fa-gears" tone="emerald" help="Scheduled hours minus all recorded downtime (planned and unplanned). This is the time actually spent producing." %}
     {% include "analytics/_kpi_card.html" with label="Overtime Hrs" value=report.working_hours.overtime_hours suffix="" icon="fa-business-time" tone="rose" help="Hours flagged as overtime within this period, counted separately from regular scheduled hours." %}
-    {% include "analytics/_kpi_card.html" with label="Planned DT" value=report.working_hours.planned_downtime_min suffix=" min" icon="fa-calendar-check" tone="amber" help="Minutes lost to intentionally scheduled stops such as lunch, operation preparation and work finalization." %}
+    {% include "analytics/_kpi_card.html" with label="Planned Stops" value=report.working_hours.planned_downtime_min suffix=" min" icon="fa-calendar-check" tone="amber" help="Part of the real downtime that comes from stop types flagged as planned, such as lunch, preparation and finalization. Counted at the minutes actually recorded, so it can differ from Downtime Plan." %}
     </div>
+  </div>
+
+  {# ── Downtime plan vs real ─────────────────────────────────────────── #}
+  <div>
+    <h3 class="text-[11px] font-bold uppercase tracking-widest text-slate-400 mb-2">Downtime — Plan vs Real</h3>
+      <div class="grid grid-cols-2 md:grid-cols-3 gap-3">
+        {% include "analytics/_kpi_card.html" with label="Downtime Plan" value=report.downtime_plan_vs_real.plan_min suffix=" min" icon="fa-calendar-days" tone="blue" help="Minutes of downtime that were scheduled in the plan as Time Blocks (lunch, preparation, finalization, chair time, extra). Only blocks that sit on an hour of the plan are counted." %}
+        {% include "analytics/_kpi_card.html" with label="Downtime Real" value=report.downtime_plan_vs_real.real_min suffix=" min" icon="fa-clock-rotate-left" tone="rose" help="Minutes of downtime actually recorded as events, including stops that were never in the plan, such as breakdowns." %}
+        {% include "analytics/_kpi_card.html" with label="Downtime Variance" value=report.downtime_plan_vs_real.variance_min suffix=" min" icon="fa-scale-unbalanced" tone="amber" help="Real downtime minus planned downtime. Positive means more time was lost than planned; negative means less." %}
+      </div>
+  </div>
+  <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+    {% include "analytics/_downtime_pva_table.html" with title="Downtime by Category" info="Planned versus recorded downtime for each category. Stops that were never in the plan show 0 planned minutes. Event types without a category, such as Machine Adjustment, are listed by their own name." rows=report.downtime_plan_vs_real.by_category first_label="Category" %}
+    {% include "analytics/_downtime_pva_table.html" with title="Downtime by Shift" info="Planned versus recorded downtime for each shift in this period." rows=report.downtime_plan_vs_real.by_shift first_label="Shift" %}
+    {% if report.downtime_plan_vs_real.by_day %}
+    {% include "analytics/_downtime_pva_table.html" with title="Downtime by Day" info="Planned versus recorded downtime for each day in this period." rows=report.downtime_plan_vs_real.by_day first_label="Day" %}
+    {% endif %}
   </div>
 
   {# ── Charts ────────────────────────────────────────────────────────────── #}
@@ -151,9 +168,9 @@
   </div>
 
   {# ── Model summary ─────────────────────────────────────────────────────── #}
-  <div class="bg-white rounded-xl border border-slate-200 overflow-hidden">
-    <h3 class="text-sm font-semibold text-slate-700 px-5 py-3 border-b border-slate-100">Model Summary{% include "analytics/_info.html" with text="Planned versus actual output per model, with productivity, to identify which models are underperforming." %}</h3>
-    <div class="overflow-x-auto">
+  <div class="bg-white rounded-xl border border-slate-200">
+    <h3 class="rounded-t-xl text-sm font-semibold text-slate-700 px-5 py-3 border-b border-slate-100">Model Summary{% include "analytics/_info.html" with text="Planned versus actual output per model, with productivity, to identify which models are underperforming." %}</h3>
+    <div class="overflow-x-auto rounded-b-xl">
       <table class="min-w-full text-xs">
         <thead class="bg-slate-50 text-slate-500 uppercase">
           <tr>

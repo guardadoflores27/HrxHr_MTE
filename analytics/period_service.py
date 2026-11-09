@@ -154,6 +154,18 @@ def build_period_report(period, anchor, **filters):
             "unplanned_downtime_min": downtime_unplanned,
             "overtime_hours": overtime_hours,
         },
+        # Downtime PLAN (Time Blocks) vs REAL (Execution Events): totals plus
+        # the hour→shift→day levels. By-day is skipped for a single day.
+        "downtime_plan_vs_real": {
+            **services.downtime_plan_vs_real(date_from=start, date_to=end, **filters),
+            "by_category": services.downtime_plan_vs_real_by_category(
+                date_from=start, date_to=end, **filters),
+            "by_shift": services.downtime_plan_vs_real_by_shift(
+                date_from=start, date_to=end, **filters),
+            "by_day": ([] if period == "day" else
+                       services.downtime_plan_vs_real_by_day(
+                           date_from=start, date_to=end, **filters)),
+        },
         "comment_distribution": [
             {"type": k, "count": v} for k, v in
             sorted(comment_dist.items(), key=lambda kv: kv[1], reverse=True)

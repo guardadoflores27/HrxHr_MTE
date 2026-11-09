@@ -159,9 +159,9 @@
       </div>
 
       {# Hourly production table #}
-      <div class="bg-white rounded-xl border border-slate-200 overflow-hidden">
-        <h3 class="text-sm font-semibold text-slate-700 px-5 py-3 border-b border-slate-100">Hourly Production{% include "analytics/_info.html" with text="Hour-by-hour detail of what was planned, produced, and commented, with each hour automatically classified." %}</h3>
-        <div class="overflow-x-auto">
+      <div class="bg-white rounded-xl border border-slate-200">
+        <h3 class="rounded-t-xl text-sm font-semibold text-slate-700 px-5 py-3 border-b border-slate-100">Hourly Production{% include "analytics/_info.html" with text="Hour-by-hour detail of what was planned, produced, and commented, with each hour automatically classified." %}</h3>
+        <div class="overflow-x-auto rounded-b-xl">
           <table class="min-w-full text-xs">
             <thead class="bg-slate-50 text-slate-500 uppercase">
               <tr>
@@ -170,6 +170,9 @@
                 <th class="px-3 py-2 text-right">Planned (pc)</th>
                 <th class="px-3 py-2 text-right">Actual (pc)</th>
                 <th class="px-3 py-2 text-right">HC</th>
+                <th class="px-3 py-2 text-right" title="Downtime scheduled in the plan for this hour, in minutes">DT Plan</th>
+                <th class="px-3 py-2 text-right" title="Downtime actually recorded for this hour, in minutes">DT Real</th>
+                <th class="px-3 py-2 text-right" title="Real minus plan. Positive means more downtime than planned">DT Var</th>
                 <th class="px-3 py-2 text-left">Status</th>
                 <th class="px-3 py-2 text-left">Comment</th>
               </tr>
@@ -182,6 +185,9 @@
                 <td class="px-3 py-2 text-right font-mono">{{ r.planned_pieces }}</td>
                 <td class="px-3 py-2 text-right font-mono">{% if r.pending %}<span class="text-amber-500">—</span>{% else %}{{ r.actual_pieces }}{% endif %}</td>
                 <td class="px-3 py-2 text-right font-mono">{{ r.headcount }}</td>
+                <td class="px-3 py-2 text-right font-mono">{{ r.plan_downtime_min }}</td>
+                <td class="px-3 py-2 text-right font-mono">{{ r.real_downtime_min }}</td>
+                <td class="px-3 py-2 text-right font-mono font-semibold {% if r.downtime_variance_min > 0 %}text-red-600{% elif r.downtime_variance_min < 0 %}text-emerald-600{% else %}text-slate-400{% endif %}">{% if r.downtime_variance_min > 0 %}+{% endif %}{{ r.downtime_variance_min }}</td>
                 <td class="px-3 py-2">
                   {% if r.pending %}<span class="inline-flex items-center gap-1 rounded-full bg-amber-50 border border-amber-200 px-2 py-0.5 text-amber-700 font-semibold"><i class="fas fa-hourglass-half text-[9px]"></i> {{ r.hour_status }}</span>
                   {% elif r.hour_status == "Plan Achieved" %}<span class="text-emerald-600 font-semibold">✓ {{ r.hour_status }}</span>
@@ -198,6 +204,9 @@
               <tr>
                 <td class="px-3 py-2 text-slate-500" colspan="4">Head count for the day</td>
                 <td class="px-3 py-2 text-right font-mono">{{ report.totals.headcount }}</td>
+                <td class="px-3 py-2 text-right font-mono">{{ report.downtime_plan_vs_real.plan_min }}</td>
+                <td class="px-3 py-2 text-right font-mono">{{ report.downtime_plan_vs_real.real_min }}</td>
+                <td class="px-3 py-2 text-right font-mono">{% if report.downtime_plan_vs_real.variance_min > 0 %}+{% endif %}{{ report.downtime_plan_vs_real.variance_min }}</td>
                 <td class="px-3 py-2" colspan="2"></td>
               </tr>
             </tfoot>
@@ -206,9 +215,9 @@
       </div>
 
       {# Model summary #}
-      <div class="bg-white rounded-xl border border-slate-200 overflow-hidden">
-        <h3 class="text-sm font-semibold text-slate-700 px-5 py-3 border-b border-slate-100">Model Summary{% include "analytics/_info.html" with text="Planned versus actual output per model, with productivity, to identify which models are underperforming." %}</h3>
-        <div class="overflow-x-auto">
+      <div class="bg-white rounded-xl border border-slate-200">
+        <h3 class="rounded-t-xl text-sm font-semibold text-slate-700 px-5 py-3 border-b border-slate-100">Model Summary{% include "analytics/_info.html" with text="Planned versus actual output per model, with productivity, to identify which models are underperforming." %}</h3>
+        <div class="overflow-x-auto rounded-b-xl">
           <table class="min-w-full text-xs">
             <thead class="bg-slate-50 text-slate-500 uppercase">
               <tr>
@@ -245,6 +254,17 @@
         {% include "analytics/_kpi_card.html" with label="Overtime Hrs" value=report.working_time.overtime_hours suffix="" icon="fa-business-time" tone="rose" help="Hours worked beyond the regular shift schedule, flagged as overtime on the hourly plan." %}
       </div>
       </div>
+
+      {# ── Downtime plan vs real ──────────────────────────────── #}
+      <div>
+        <h3 class="text-[11px] font-bold uppercase tracking-widest text-slate-400 mb-2">Downtime — Plan vs Real</h3>
+      <div class="grid grid-cols-2 md:grid-cols-3 gap-3">
+        {% include "analytics/_kpi_card.html" with label="Downtime Plan" value=report.downtime_plan_vs_real.plan_min suffix=" min" icon="fa-calendar-days" tone="blue" help="Minutes of downtime that were scheduled in the plan as Time Blocks (lunch, preparation, finalization, chair time, extra). Only blocks that sit on an hour of the plan are counted." %}
+        {% include "analytics/_kpi_card.html" with label="Downtime Real" value=report.downtime_plan_vs_real.real_min suffix=" min" icon="fa-clock-rotate-left" tone="rose" help="Minutes of downtime actually recorded as events, including stops that were never in the plan, such as breakdowns." %}
+        {% include "analytics/_kpi_card.html" with label="Downtime Variance" value=report.downtime_plan_vs_real.variance_min suffix=" min" icon="fa-scale-unbalanced" tone="amber" help="Real downtime minus planned downtime. Positive means more time was lost than planned; negative means less." %}
+      </div>
+      </div>
+      {% include "analytics/_downtime_pva_table.html" with title="Downtime by Category" info="Planned versus recorded downtime for each category. Stops that were never in the plan show 0 planned minutes. Event types without a category, such as Machine Adjustment, are listed by their own name." rows=report.downtime_plan_vs_real.by_category first_label="Category" %}
 
     {% endif %}
     </div>

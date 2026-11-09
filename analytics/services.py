@@ -14,11 +14,14 @@
 # All functions accept the same keyword filters and are safe to call with none.
 # ─────────────────────────────────────────────────────────────────────────────
 
-from django.db.models import Sum, Count, Avg, F, Q, IntegerField, Value
+from django.db.models import (
+    Sum, Count, Avg, F, Q, IntegerField, Value, OuterRef, Subquery, Exists,
+)
 from django.db.models.functions import (
     TruncDay, TruncWeek, TruncMonth, TruncYear, Greatest,
 )
 
+from planning.models import HourlyPlan, HourlyPlanBlock
 from production.models import ExecutionEvent, HourlyExecution
 
 
@@ -108,6 +111,143 @@ def runtime_minutes(**f):
 def production_time_minutes(**f):
     """Alias for runtime — time actually spent producing."""
     return runtime_minutes(**f)
+
+
+
+# ─── Downtime: PLAN (Time Blocks) vs REAL (Execution Events) ─────────────────
+#
+# PLAN = minutes scheduled as Time Blocks on the Hourly Plan (HourlyPlanBlock).
+# REAL = minutes recorded as Execution Events (everything captured, including
+#        unplanned stops that were never in the plan).
+# variance = real − plan  → positive means MORE downtime than planned.
+#
+# NOT the same thing as planned_downtime_minutes() above, which is the part of
+# the REAL events whose category is flagged is_planned. Here "planned" means
+# "it was in the plan", whatever happened afterwards.
+#
+# A Time Block only counts when its slot has an hour on that Daily Plan: that is
+# the same rule block_bridge.sync_event_for_block uses to create its event, so
+# plan and real stay comparable (a block with no hour can never become an
+# event). Where several models share one hour, the block belongs to the first
+# HourlyPlan of that hour (by id) — again exactly what the bridge does.
+
+def plan_blocks_qs(date_from=None, date_to=None, work_center_id=None,
+                   subprocess_id=None, shift_id=None, model_id=None,
+                   operator_id=None, **_ignored):
+    """Filtered HourlyPlanBlock queryset (only blocks that sit on an hour)."""
+    hours = (HourlyPlan.objects
+             .filter(daily_plan_id=OuterRef("daily_plan_id"),
+                     hour=OuterRef("slot_time"))
+             .order_by("id"))
+    qs = (HourlyPlanBlock.objects
+          .annotate(first_model_id=Subquery(hours.values("model_id")[:1]))
+          .filter(Exists(hours)))
+    if date_from:      qs = qs.filter(daily_plan__date__gte=date_from)
+    if date_to:        qs = qs.filter(daily_plan__date__lte=date_to)
+    if work_center_id: qs = qs.filter(daily_plan__work_center_id=work_center_id)
+    if subprocess_id:  qs = qs.filter(daily_plan__subprocess_id=subprocess_id)
+    if shift_id:       qs = qs.filter(daily_plan__shift_id=shift_id)
+    if model_id:       qs = qs.filter(first_model_id=model_id)
+    if operator_id:    qs = qs.filter(daily_plan__operator_id=operator_id)
+    return qs
+
+
+def plan_downtime_minutes(**f):
+    """Downtime minutes scheduled in the plan (Time Blocks)."""
+    return plan_blocks_qs(**f).aggregate(t=Sum("minutes"))["t"] or 0
+
+
+def real_downtime_minutes(**f):
+    """Downtime minutes actually recorded (all Execution Events)."""
+    return downtime_minutes(**{k: v for k, v in f.items()
+                               if k not in ("category_id", "event_type_id")})
+
+
+def downtime_variance(plan_min, real_min):
+    """real − plan. Positive = more downtime than planned."""
+    return (real_min or 0) - (plan_min or 0)
+
+
+def _pva_row(plan_min, real_min):
+    return {"plan_min": plan_min, "real_min": real_min,
+            "variance_min": downtime_variance(plan_min, real_min)}
+
+
+def downtime_plan_vs_real(**f):
+    """Day-/period-level totals: {plan_min, real_min, variance_min}."""
+    return _pva_row(plan_downtime_minutes(**f), real_downtime_minutes(**f))
+
+
+def category_plan_vs_real(blocks, events):
+    """Plan vs real per category from two querysets (HourlyPlanBlock and
+    ExecutionEvent), biggest real downtime first. Rows that exist only in the
+    real data (e.g. breakdowns) show plan = 0. Event types without a category
+    get their own row named after the event type."""
+    block_names = dict(HourlyPlanBlock.BLOCK_TYPES)
+    acc = {}
+    for r in blocks.values("block_type").annotate(m=Sum("minutes")):
+        acc[r["block_type"]] = {
+            "code": r["block_type"],
+            "name": block_names.get(r["block_type"], r["block_type"]),
+            "plan_min": r["m"] or 0, "real_min": 0}
+    # Event types that have no category (Machine Adjustment, Meeting, Other...)
+    # are listed one row per EVENT TYPE instead of one lumped "Uncategorized".
+    for r in (events
+              .values("event_type__category__code", "event_type__category__name",
+                      "event_type__name")
+              .annotate(m=Sum("duration_minutes"))):
+        if r["event_type__category__code"]:
+            code, name = r["event_type__category__code"], r["event_type__category__name"]
+        else:
+            name = r["event_type__name"] or "Uncategorized"
+            code = f"type:{name}"
+        row = acc.setdefault(code, {
+            "code": code, "name": name, "plan_min": 0, "real_min": 0})
+        row["real_min"] += r["m"] or 0
+    rows = []
+    for row in acc.values():
+        row["variance_min"] = downtime_variance(row["plan_min"], row["real_min"])
+        row["label"] = row["name"]
+        rows.append(row)
+    rows.sort(key=lambda r: (-r["real_min"], -r["plan_min"], r["name"]))
+    return rows
+
+
+def downtime_plan_vs_real_by_category(**f):
+    """category_plan_vs_real over the filtered scope."""
+    f = {k: v for k, v in f.items() if k not in ("category_id", "event_type_id")}
+    return category_plan_vs_real(plan_blocks_qs(**f), events_qs(**f))
+
+
+def _pva_grouped(block_path, event_path, **f):
+    """{group_value: (plan_min, real_min)} grouped by an ORM path on each side."""
+    f = {k: v for k, v in f.items() if k not in ("category_id", "event_type_id")}
+    acc = {}
+    for r in plan_blocks_qs(**f).values(block_path).annotate(m=Sum("minutes")):
+        acc.setdefault(r[block_path], [0, 0])[0] += r["m"] or 0
+    for r in events_qs(**f).values(event_path).annotate(m=Sum("duration_minutes")):
+        acc.setdefault(r[event_path], [0, 0])[1] += r["m"] or 0
+    return acc
+
+
+def downtime_plan_vs_real_by_shift(**f):
+    """Shift level: one row per shift with plan, real and variance."""
+    from core.models import Shift
+    acc = _pva_grouped("daily_plan__shift_id", f"{_EVENT_DAILY}__shift_id", **f)
+    names = {s.id: s.name for s in Shift.objects.filter(id__in=[k for k in acc if k])}
+    rows = []
+    for sid, (p, r) in acc.items():
+        rows.append({"shift_id": sid, "shift": names.get(sid, "—"),
+                     "label": names.get(sid, "—"), **_pva_row(p, r)})
+    rows.sort(key=lambda x: x["shift"])
+    return rows
+
+
+def downtime_plan_vs_real_by_day(**f):
+    """Day level inside a range: one row per date, oldest first."""
+    acc = _pva_grouped("daily_plan__date", f"{_EVENT_DAILY}__date", **f)
+    return [{"date": d.isoformat(), "label": d.isoformat(), **_pva_row(p, r)}
+            for d, (p, r) in sorted(acc.items())]
 
 
 # ─── Availability / Utilization ──────────────────────────────────────────────
@@ -285,10 +425,14 @@ def kpi_summary(**f):
     """Every headline KPI in a single dict — feeds the KPI cards."""
     pva = planned_vs_actual(**f)
     good = good_quantity(**f)
+    pdt = downtime_plan_vs_real(**f)
     return {
         "downtime_minutes":          downtime_minutes(**f),
         "planned_downtime_minutes":  planned_downtime_minutes(**f),
         "unplanned_downtime_minutes":unplanned_downtime_minutes(**f),
+        "plan_downtime_minutes":     pdt["plan_min"],
+        "real_downtime_minutes":     pdt["real_min"],
+        "downtime_variance_minutes": pdt["variance_min"],
         "runtime_minutes":           runtime_minutes(**f),
         "production_time_minutes":   production_time_minutes(**f),
         "scheduled_minutes":         scheduled_minutes(**f),

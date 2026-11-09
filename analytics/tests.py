@@ -1066,3 +1066,218 @@ class YieldTestCase(TestCase):
             self.assertTrue(any("Yield" in l for l in labels))
         self.assertTrue(export_service.day_report_to_pdf(day_rep)[:5] == b"%PDF-")
         self.assertTrue(export_service.period_report_to_pdf(per_rep)[:5] == b"%PDF-")
+
+
+class DowntimePlanVsRealTestCase(TestCase):
+    """Fase 4 — downtime PLAN (Time Blocks) vs REAL (Execution Events), at the
+    hour, category, shift, day and period levels. variance = real − plan."""
+
+    def setUp(self):
+        import random
+        from production.models import EventCategory, EventType
+        s = str(random.randint(10000, 99999))
+        self.u = User.objects.create_user("dpr" + s, password="pw")
+        self.wc = WorkCenter.objects.create(name="WC-DPR" + s)
+        spt = SubProcessType.objects.create(
+            name="T-DPR" + s, applies_to="reactores", units_per_piece=1)
+        self.sp = SubProcess.objects.create(
+            work_center=self.wc, name="SP-DPR" + s, subprocess_type=spt)
+        self.shift = Shift.objects.create(
+            name="DPR" + s, code="D" + s[:3],
+            start_time=dt.time(6), end_time=dt.time(14), is_active=True)
+        self.plan = DailyPlan.objects.create(
+            date=dt.date(2027, 2, 10), work_center=self.wc, subprocess=self.sp,
+            headcount=5, shift=self.shift, operator=self.u, created_by=self.u)
+        self.model = PlanningModel.objects.create(name="DPR Model" + s)
+        self.hp1 = HourlyPlan.objects.create(
+            daily_plan=self.plan, hour=dt.time(8), model=self.model,
+            planned_quantity=10)
+        self.hp2 = HourlyPlan.objects.create(
+            daily_plan=self.plan, hour=dt.time(9), model=self.model,
+            planned_quantity=10)
+        # Plan: lunch 30 @8, chair 10 @9.  (Blocks auto-create their events.)
+        self.b_lunch = HourlyPlanBlock.objects.create(
+            daily_plan=self.plan, slot_time=dt.time(8), block_type="lunch",
+            minutes=30, created_by=self.u)
+        HourlyPlanBlock.objects.create(
+            daily_plan=self.plan, slot_time=dt.time(9), block_type="chair",
+            minutes=10, created_by=self.u)
+        # A block on a slot with NO hour can never become an event → ignored.
+        HourlyPlanBlock.objects.create(
+            daily_plan=self.plan, slot_time=dt.time(11), block_type="extra",
+            minutes=15, reason="orphan", created_by=self.u)
+        # Real: the lunch really took 45 (user edit) …
+        ev = ExecutionEvent.objects.get(source_block=self.b_lunch)
+        ev.duration_minutes = 45
+        ev.user_modified = True
+        ev.save()
+        # … and an unplanned breakdown of 20 min happened in hour 2.
+        cat = EventCategory.objects.create(
+            code="brk" + s, name="Breakdown" + s, is_planned=False)
+        et = EventType.objects.create(name="Machine down" + s, category=cat)
+        ExecutionEvent.objects.create(
+            execution=HourlyExecution.objects.get(hourly_plan=self.hp2),
+            event_type=et, duration_minutes=20)
+        self.cat_name = "Breakdown" + s
+        self.client = Client()
+        self.client.login(username=self.u.username, password="pw")
+
+    # ── services (scope = whole work center) ─────────────────────────────
+    def test_totals_ignore_block_without_hour(self):
+        t = services.downtime_plan_vs_real(work_center_id=self.wc.id)
+        self.assertEqual(t["plan_min"], 40)        # 30 + 10, orphan 15 excluded
+        self.assertEqual(t["real_min"], 75)        # 45 + 10 + 20
+        self.assertEqual(t["variance_min"], 35)
+
+    def test_kpi_summary_has_plan_real_variance(self):
+        k = services.kpi_summary(work_center_id=self.wc.id)
+        self.assertEqual(k["plan_downtime_minutes"], 40)
+        self.assertEqual(k["real_downtime_minutes"], 75)
+        self.assertEqual(k["downtime_variance_minutes"], 35)
+        self.assertEqual(k["real_downtime_minutes"], k["downtime_minutes"])
+
+    def test_by_category(self):
+        rows = {r["code"]: r for r in
+                services.downtime_plan_vs_real_by_category(work_center_id=self.wc.id)}
+        self.assertEqual((rows["lunch"]["plan_min"], rows["lunch"]["real_min"]), (30, 45))
+        self.assertEqual((rows["chair"]["plan_min"], rows["chair"]["real_min"]), (10, 10))
+        brk = [r for r in rows.values() if r["name"] == self.cat_name][0]
+        self.assertEqual((brk["plan_min"], brk["real_min"], brk["variance_min"]), (0, 20, 20))
+        self.assertNotIn("extra", rows)            # the orphan block
+
+    def test_event_type_without_category_is_listed_by_its_own_name(self):
+        """Machine Adjustment / Meeting / Other have no category: they must show
+        as their own rows, not collapse into one 'Uncategorized' bucket."""
+        et = EventType.objects.get(name="Machine Adjustment")
+        self.assertIsNone(et.category)
+        ExecutionEvent.objects.create(
+            execution=HourlyExecution.objects.get(hourly_plan=self.hp1),
+            event_type=et, duration_minutes=20)
+        ExecutionEvent.objects.create(
+            execution=HourlyExecution.objects.get(hourly_plan=self.hp1),
+            event_type=EventType.objects.get(name="Meeting"), duration_minutes=5)
+        rows = {r["name"]: r for r in
+                services.downtime_plan_vs_real_by_category(work_center_id=self.wc.id)}
+        self.assertEqual((rows["Machine Adjustment"]["plan_min"],
+                          rows["Machine Adjustment"]["real_min"]), (0, 20))
+        self.assertEqual(rows["Meeting"]["real_min"], 5)
+        self.assertNotIn("Uncategorized", rows)
+
+    def test_by_shift_and_by_day(self):
+        sh = services.downtime_plan_vs_real_by_shift(work_center_id=self.wc.id)
+        self.assertEqual(len(sh), 1)
+        self.assertEqual((sh[0]["plan_min"], sh[0]["real_min"]), (40, 75))
+        self.assertEqual(sh[0]["shift"], self.shift.name)
+        days = services.downtime_plan_vs_real_by_day(work_center_id=self.wc.id)
+        self.assertEqual([d["date"] for d in days], ["2027-02-10"])
+        self.assertEqual(days[0]["variance_min"], 35)
+
+    def test_respects_subprocess_filter(self):
+        import random
+        s2 = str(random.randint(10000, 99999))
+        spt2 = SubProcessType.objects.create(
+            name="T2-DPR" + s2, applies_to="reactores", units_per_piece=1)
+        sp2 = SubProcess.objects.create(
+            work_center=self.wc, name="OTHER-DPR" + s2, subprocess_type=spt2)
+        plan2 = DailyPlan.objects.create(
+            date=dt.date(2027, 2, 10), work_center=self.wc, subprocess=sp2,
+            headcount=5, shift=self.shift)
+        HourlyPlan.objects.create(daily_plan=plan2, hour=dt.time(8),
+                                  model=self.model, planned_quantity=10)
+        HourlyPlanBlock.objects.create(daily_plan=plan2, slot_time=dt.time(8),
+                                       block_type="lunch", minutes=99)
+        t = services.downtime_plan_vs_real(subprocess_id=self.sp.id)
+        self.assertEqual((t["plan_min"], t["real_min"]), (40, 75))
+
+    def test_block_goes_to_first_hour_when_models_share_an_hour(self):
+        """Two models in the same hour: the block (and its event) belong to the
+        first HourlyPlan, so a model filter must follow that same rule."""
+        import random
+        s2 = str(random.randint(10000, 99999))
+        m2 = PlanningModel.objects.create(name="DPR M2" + s2)
+        HourlyPlan.objects.create(daily_plan=self.plan, hour=dt.time(8),
+                                  model=m2, planned_quantity=5)
+        t1 = services.downtime_plan_vs_real(work_center_id=self.wc.id,
+                                            model_id=self.model.id)
+        t2 = services.downtime_plan_vs_real(work_center_id=self.wc.id,
+                                            model_id=m2.id)
+        self.assertEqual(t1["plan_min"], 40)
+        self.assertEqual(t2["plan_min"], 0)
+
+    def test_no_data_is_all_zero(self):
+        t = services.downtime_plan_vs_real(work_center_id=self.wc.id,
+                                           date_from=dt.date(2030, 1, 1))
+        self.assertEqual(t, {"plan_min": 0, "real_min": 0, "variance_min": 0})
+
+    # ── Day report (hour level) ──────────────────────────────────────────
+    def test_day_report_hour_level(self):
+        from analytics import day_service
+        rep = day_service.build_day_report(self.plan)
+        rows = rep["hourly_rows"]
+        self.assertEqual((rows[0]["plan_downtime_min"], rows[0]["real_downtime_min"],
+                          rows[0]["downtime_variance_min"]), (30, 45, 15))
+        self.assertEqual((rows[1]["plan_downtime_min"], rows[1]["real_downtime_min"],
+                          rows[1]["downtime_variance_min"]), (10, 30, 20))
+        d = rep["downtime_plan_vs_real"]
+        self.assertEqual((d["plan_min"], d["real_min"], d["variance_min"]), (40, 75, 35))
+        self.assertEqual(sum(r["real_min"] for r in d["by_category"]), 75)
+
+    def test_day_hours_sum_to_day_and_match_services(self):
+        from analytics import day_service
+        rep = day_service.build_day_report(self.plan)
+        d = rep["downtime_plan_vs_real"]
+        self.assertEqual(sum(r["plan_downtime_min"] for r in rep["hourly_rows"]), d["plan_min"])
+        self.assertEqual(sum(r["real_downtime_min"] for r in rep["hourly_rows"]), d["real_min"])
+        t = services.downtime_plan_vs_real(work_center_id=self.wc.id)
+        self.assertEqual((d["plan_min"], d["real_min"]), (t["plan_min"], t["real_min"]))
+
+    # ── Period report (shift / day levels) ───────────────────────────────
+    def test_period_report_levels(self):
+        from analytics import period_service as ps
+        # Second day, same shift: plan 20, real 20 (event follows the block).
+        plan2 = DailyPlan.objects.create(
+            date=dt.date(2027, 2, 11), work_center=self.wc, subprocess=self.sp,
+            headcount=5, shift=self.shift, operator=self.u, created_by=self.u)
+        HourlyPlan.objects.create(daily_plan=plan2, hour=dt.time(8),
+                                  model=self.model, planned_quantity=10)
+        HourlyPlanBlock.objects.create(daily_plan=plan2, slot_time=dt.time(8),
+                                       block_type="lunch", minutes=20,
+                                       created_by=self.u)
+        rep = ps.build_period_report("week", dt.date(2027, 2, 10),
+                                     work_center_id=self.wc.id)["downtime_plan_vs_real"]
+        self.assertEqual((rep["plan_min"], rep["real_min"], rep["variance_min"]), (60, 95, 35))
+        self.assertEqual([d["date"] for d in rep["by_day"]], ["2027-02-10", "2027-02-11"])
+        self.assertEqual(len(rep["by_shift"]), 1)
+        self.assertEqual(rep["by_shift"][0]["plan_min"], 60)
+        # A single-day period has no by-day breakdown.
+        day = ps.build_period_report("day", dt.date(2027, 2, 10),
+                                     work_center_id=self.wc.id)["downtime_plan_vs_real"]
+        self.assertEqual(day["by_day"], [])
+
+    # ── presentation ─────────────────────────────────────────────────────
+    def test_dashboards_render_downtime_plan_vs_real(self):
+        r = self.client.get("/analytics/")
+        self.assertContains(r, "Downtime Variance")
+        r = self.client.get("/analytics/period/?period=month&anchor=2027-02-10")
+        self.assertContains(r, "Downtime — Plan vs Real")
+        self.assertContains(r, "Downtime by Shift")
+        r = self.client.get(f"/analytics/day/?plan={self.plan.id}")
+        self.assertContains(r, "Downtime — Plan vs Real")
+        self.assertContains(r, "DT Plan")
+        self.assertContains(r, self.cat_name)
+
+    def test_exports_contain_downtime_plan_vs_real(self):
+        import io
+        from openpyxl import load_workbook
+        from analytics import day_service, period_service, export_service
+        day_rep = day_service.build_day_report(self.plan)
+        per_rep = period_service.build_period_report(
+            "month", dt.date(2027, 2, 10), work_center_id=self.wc.id)
+        for content in (export_service.day_report_to_excel(day_rep),
+                        export_service.period_report_to_excel(per_rep)):
+            ws = load_workbook(io.BytesIO(content)).active
+            cells = [str(c.value) for row in ws.iter_rows() for c in row if c.value]
+            self.assertTrue(any("Downtime plan (min)" in c for c in cells))
+            self.assertTrue(any("Downtime variance (min)" in c for c in cells))
+        self.assertTrue(export_service.day_report_to_pdf(day_rep)[:5] == b"%PDF-")
+        self.assertTrue(export_service.period_report_to_pdf(per_rep)[:5] == b"%PDF-")

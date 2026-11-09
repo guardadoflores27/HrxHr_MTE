@@ -81,6 +81,14 @@ def _xl_table(ws, start_row, headers, rows):
     return r + 1
 
 
+def _pva_rows(rows):
+    """Plan-vs-real downtime rows → table rows [label, plan, real, variance]."""
+    return [[r["label"], r["plan_min"], r["real_min"], r["variance_min"]] for r in rows]
+
+
+_PVA_HEAD = ["Plan (min)", "Real (min)", "Variance (min)"]
+
+
 def _kv_rows(pairs):
     return [[k, v] for k, v in pairs]
 
@@ -90,7 +98,7 @@ def day_report_to_excel(report):
     ws = wb.active
     ws.title = "Day Report"
     m, t = report["meta"], report["totals"]
-    ncols = 7
+    ncols = 12
 
     _xl_title(ws, f"Daily Production Report — {m['work_center']}",
               f"{m['date']}  ·  {m['subprocess']}  ·  Shift: {m['shift']}  ·  {m['conversion']}", ncols)
@@ -107,14 +115,25 @@ def day_report_to_excel(report):
         ("Completion %", t["completion_pct"]), ("Head Count", t["headcount"]),
     ]))
 
+    d = report["downtime_plan_vs_real"]
+    r = _xl_section(ws, r, "Downtime — Plan vs Real", ncols)
+    r = _xl_table(ws, r, ["Metric", "Value"], _kv_rows([
+        ("Downtime plan (min)", d["plan_min"]),
+        ("Downtime real (min)", d["real_min"]),
+        ("Downtime variance (min)", d["variance_min"]),
+    ]))
+    r = _xl_table(ws, r, ["Category"] + _PVA_HEAD, _pva_rows(d["by_category"]))
+
     r = _xl_section(ws, r, "Hourly Detail", ncols)
     r = _xl_table(ws, r,
         ["Hour", "Model", "Planned (pc)", "Actual (pc)",
-         "HC Plan", "HC Actual", "HC Diff", "Status", "Comment"],
+         "HC Plan", "HC Actual", "HC Diff", "DT Plan (min)", "DT Real (min)",
+         "DT Var (min)", "Status", "Comment"],
         [[h["hour_12h"], h["model"], h["planned_pieces"], h["actual_pieces"],
           h.get("planned_headcount"),
           h.get("actual_headcount") if h.get("actual_headcount") is not None else "—",
           h.get("headcount_diff") if h.get("headcount_diff") is not None else "—",
+          h["plan_downtime_min"], h["real_downtime_min"], h["downtime_variance_min"],
           h["hour_status"], h["comment"]] for h in report["hourly_rows"]])
 
     r = _xl_section(ws, r, "Model Summary", ncols)
@@ -156,6 +175,18 @@ def period_report_to_excel(report):
         ("Planned downtime (min)", w["planned_downtime_min"]),
         ("Unplanned downtime (min)", w["unplanned_downtime_min"]),
     ]))
+
+    d = report["downtime_plan_vs_real"]
+    r = _xl_section(ws, r, "Downtime — Plan vs Real", ncols)
+    r = _xl_table(ws, r, ["Metric", "Value"], _kv_rows([
+        ("Downtime plan (min)", d["plan_min"]),
+        ("Downtime real (min)", d["real_min"]),
+        ("Downtime variance (min)", d["variance_min"]),
+    ]))
+    r = _xl_table(ws, r, ["Category"] + _PVA_HEAD, _pva_rows(d["by_category"]))
+    r = _xl_table(ws, r, ["Shift"] + _PVA_HEAD, _pva_rows(d["by_shift"]))
+    if d["by_day"]:
+        r = _xl_table(ws, r, ["Day"] + _PVA_HEAD, _pva_rows(d["by_day"]))
 
     r = _xl_section(ws, r, "Comment Distribution", ncols)
     r = _xl_table(ws, r, ["Status", "Count"],
@@ -251,17 +282,27 @@ def day_report_to_pdf(report):
         [width/7.0]*7))
     story.append(Spacer(1, 8))
 
+    d = report["downtime_plan_vs_real"]
+    story.append(Paragraph("Downtime — Plan vs Real", styles["Section"]))
+    story.append(_data_table(
+        ["Category"] + _PVA_HEAD,
+        _pva_rows(d["by_category"]) + [["Total", d["plan_min"], d["real_min"], d["variance_min"]]],
+        [width*0.4, width*0.2, width*0.2, width*0.2]))
+    story.append(Spacer(1, 8))
+
     story.append(Paragraph("Hourly Detail", styles["Section"]))
     hrows = [[h["hour_12h"], h["model"], h["planned_pieces"], h["actual_pieces"],
               h.get("planned_headcount"),
               h.get("actual_headcount") if h.get("actual_headcount") is not None else "—",
               h.get("headcount_diff") if h.get("headcount_diff") is not None else "—",
-              h["hour_status"], (h["comment"] or "")[:32]]
+              h["plan_downtime_min"], h["real_downtime_min"], h["downtime_variance_min"],
+              h["hour_status"], (h["comment"] or "")[:28]]
              for h in report["hourly_rows"]]
     story.append(_data_table(
         ["Hour", "Model", "Planned", "Actual", "HC Plan", "HC Real", "HC Diff",
-         "Status", "Comment"],
-        hrows, [w*width for w in (0.10, 0.14, 0.08, 0.08, 0.07, 0.07, 0.07, 0.16, 0.23)]))
+         "DT Plan", "DT Real", "DT Var", "Status", "Comment"],
+        hrows, [w*width for w in (0.08, 0.12, 0.07, 0.07, 0.06, 0.06, 0.06, 
+                                  0.06, 0.06, 0.06, 0.14, 0.16)]))
     story.append(Spacer(1, 8))
 
     story.append(Paragraph("Model Summary", styles["Section"]))
@@ -310,6 +351,21 @@ def period_report_to_pdf(report):
         [[w["scheduled_hours"], w["real_working_hours"], w["overtime_hours"],
           w["planned_downtime_min"], w["unplanned_downtime_min"]]],
         [width/5.0]*5))
+    story.append(Spacer(1, 8))
+
+    d = report["downtime_plan_vs_real"]
+    story.append(Paragraph("Downtime — Plan vs Real", styles["Section"]))
+    for head, key in (("Category", "by_category"), ("Shift", "by_shift"), ("Day", "by_day")):
+        if not d[key]:
+            continue
+        story.append(_data_table(
+            [head] + _PVA_HEAD, _pva_rows(d[key]),
+            [width*0.4, width*0.2, width*0.2, width*0.2]))
+        story.append(Spacer(1, 6))
+    story.append(_data_table(
+        ["Total"] + _PVA_HEAD,
+        [["All", d["plan_min"], d["real_min"], d["variance_min"]]],
+        [width*0.4, width*0.2, width*0.2, width*0.2]))
     story.append(Spacer(1, 8))
 
     story.append(Paragraph("Comment Distribution", styles["Section"]))
