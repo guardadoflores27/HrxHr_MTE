@@ -138,6 +138,7 @@ def build_day_report(plan):
                   .annotate(m=Sum("duration_minutes")))
     }
     tot_plan_dt = tot_real_dt = 0
+    tot_hc_plan = tot_hc_real = hc_off = 0   # man-hours over CAPTURED hours
 
     hourly_rows = []
     tot_planned_u = tot_actual_u = tot_scrap_u = tot_good_u = 0
@@ -161,6 +162,14 @@ def build_day_report(plan):
         tot_good_u    += max(0, (actual_u or 0) - scrap_u)
         if not captured and planned_u > 0:
             pending_hours += 1
+
+        if captured:
+            hc_plan_h = hp.effective_headcount()
+            hc_real_h = ex.effective_actual_headcount
+            tot_hc_plan += hc_plan_h
+            tot_hc_real += hc_real_h
+            if hc_real_h != hc_plan_h:
+                hc_off += 1
 
         plan_dt = plan_dt_by_hp.get(hp.id, 0)
         real_dt = real_dt_by_hp.get(hp.id, 0)
@@ -272,6 +281,10 @@ def build_day_report(plan):
             "difference_pieces": units_to_pieces(tot_actual_u - tot_planned_u, factor),
             "completion_pct": completion,
             "headcount":      plan.headcount,
+            "hc_plan_hours":     tot_hc_plan,
+            "hc_real_hours":     tot_hc_real,
+            "hc_variance_hours": tot_hc_real - tot_hc_plan,
+            "hc_hours_off_plan": hc_off,
             "pending_hours":  pending_hours,
         },
         "working_time":  working_time,

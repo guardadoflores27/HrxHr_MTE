@@ -129,6 +129,17 @@
     </div>
   </div>
 
+  {# ── Head count plan vs real ───────────────────────────────────────── #}
+  <div>
+    <h3 class="text-[11px] font-bold uppercase tracking-widest text-slate-400 mb-2">Head Count — Plan vs Real</h3>
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+      {% include "analytics/_kpi_card.html" with label="Man-hours Plan" value=report.headcount_plan_vs_real.plan_hours suffix="" icon="fa-users" tone="blue" help="Person-hours the plan called for: the planned head count of every captured hour, added up. For example, 5 people over 8 hours is 40." %}
+      {% include "analytics/_kpi_card.html" with label="Man-hours Real" value=report.headcount_plan_vs_real.real_hours suffix="" icon="fa-user-check" tone="emerald" help="Person-hours actually worked: the head count captured for every hour, added up. An hour where it was never captured counts with its planned head count." %}
+      {% include "analytics/_kpi_card.html" with label="Man-hours Variance" value=report.headcount_plan_vs_real.variance_hours suffix="" icon="fa-scale-unbalanced" tone="amber" help="Real minus plan. Negative means the line ran with fewer people than planned; positive means extra people." %}
+      {% include "analytics/_kpi_card.html" with label="Hours Off Plan" value=report.headcount_plan_vs_real.hours_off_plan suffix="" icon="fa-user-xmark" tone="orange" help="Captured hours where the real head count was different from the plan." %}
+    </div>
+  </div>
+
   {# ── Downtime plan vs real ─────────────────────────────────────────── #}
   <div>
     <h3 class="text-[11px] font-bold uppercase tracking-widest text-slate-400 mb-2">Downtime — Plan vs Real</h3>

@@ -169,7 +169,9 @@
                 <th class="px-3 py-2 text-left">Model</th>
                 <th class="px-3 py-2 text-right">Planned (pc)</th>
                 <th class="px-3 py-2 text-right">Actual (pc)</th>
-                <th class="px-3 py-2 text-right">HC</th>
+                <th class="px-3 py-2 text-right" title="Head count the hour was planned with">HC Plan</th>
+                <th class="px-3 py-2 text-right" title="Head count actually captured for the hour">HC Real</th>
+                <th class="px-3 py-2 text-right" title="Real minus plan. Negative means the line ran short">HC Diff</th>
                 <th class="px-3 py-2 text-right" title="Downtime scheduled in the plan for this hour, in minutes">DT Plan</th>
                 <th class="px-3 py-2 text-right" title="Downtime actually recorded for this hour, in minutes">DT Real</th>
                 <th class="px-3 py-2 text-right" title="Real minus plan. Positive means more downtime than planned">DT Var</th>
@@ -184,7 +186,9 @@
                 <td class="px-3 py-2">{{ r.model }}</td>
                 <td class="px-3 py-2 text-right font-mono">{{ r.planned_pieces }}</td>
                 <td class="px-3 py-2 text-right font-mono">{% if r.pending %}<span class="text-amber-500">—</span>{% else %}{{ r.actual_pieces }}{% endif %}</td>
-                <td class="px-3 py-2 text-right font-mono">{{ r.headcount }}</td>
+                <td class="px-3 py-2 text-right font-mono">{{ r.planned_headcount }}</td>
+                <td class="px-3 py-2 text-right font-mono">{% if r.captured %}{{ r.actual_headcount }}{% else %}<span class="text-amber-500">—</span>{% endif %}</td>
+                <td class="px-3 py-2 text-right font-mono font-semibold {% if not r.captured or r.headcount_diff == 0 %}text-slate-400{% elif r.headcount_diff < 0 %}text-red-600{% else %}text-amber-600{% endif %}"{% if r.headcount_comment %} title="{{ r.headcount_comment }}"{% endif %}>{% if r.captured %}{% if r.headcount_diff > 0 %}+{% endif %}{{ r.headcount_diff }}{% else %}—{% endif %}</td>
                 <td class="px-3 py-2 text-right font-mono">{{ r.plan_downtime_min }}</td>
                 <td class="px-3 py-2 text-right font-mono">{{ r.real_downtime_min }}</td>
                 <td class="px-3 py-2 text-right font-mono font-semibold {% if r.downtime_variance_min > 0 %}text-red-600{% elif r.downtime_variance_min < 0 %}text-emerald-600{% else %}text-slate-400{% endif %}">{% if r.downtime_variance_min > 0 %}+{% endif %}{{ r.downtime_variance_min }}</td>
@@ -202,8 +206,10 @@
 
             <tfoot class="bg-slate-50 font-semibold text-slate-700">
               <tr>
-                <td class="px-3 py-2 text-slate-500" colspan="4">Head count for the day</td>
-                <td class="px-3 py-2 text-right font-mono">{{ report.totals.headcount }}</td>
+                <td class="px-3 py-2 text-slate-500" colspan="4">Day totals · HC in man-hours</td>
+                <td class="px-3 py-2 text-right font-mono">{{ report.totals.hc_plan_hours }}</td>
+                <td class="px-3 py-2 text-right font-mono">{{ report.totals.hc_real_hours }}</td>
+                <td class="px-3 py-2 text-right font-mono">{% if report.totals.hc_variance_hours > 0 %}+{% endif %}{{ report.totals.hc_variance_hours }}</td>
                 <td class="px-3 py-2 text-right font-mono">{{ report.downtime_plan_vs_real.plan_min }}</td>
                 <td class="px-3 py-2 text-right font-mono">{{ report.downtime_plan_vs_real.real_min }}</td>
                 <td class="px-3 py-2 text-right font-mono">{% if report.downtime_plan_vs_real.variance_min > 0 %}+{% endif %}{{ report.downtime_plan_vs_real.variance_min }}</td>
@@ -253,6 +259,17 @@
         {% include "analytics/_kpi_card.html" with label="Lunch" value=report.working_time.lunch_minutes suffix=" min" icon="fa-utensils" tone="orange" help="Total minutes recorded as the scheduled lunch stop." %}
         {% include "analytics/_kpi_card.html" with label="Overtime Hrs" value=report.working_time.overtime_hours suffix="" icon="fa-business-time" tone="rose" help="Hours worked beyond the regular shift schedule, flagged as overtime on the hourly plan." %}
       </div>
+      </div>
+
+      {# ── Head count plan vs real ────────────────────────────── #}
+      <div>
+        <h3 class="text-[11px] font-bold uppercase tracking-widest text-slate-400 mb-2">Head Count — Plan vs Real</h3>
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+          {% include "analytics/_kpi_card.html" with label="Man-hours Plan" value=report.totals.hc_plan_hours suffix="" icon="fa-users" tone="blue" help="Person-hours the plan called for: the planned head count of every captured hour, added up. For example, 5 people over 8 hours is 40." %}
+          {% include "analytics/_kpi_card.html" with label="Man-hours Real" value=report.totals.hc_real_hours suffix="" icon="fa-user-check" tone="emerald" help="Person-hours actually worked: the head count captured for every hour, added up. An hour where it was never captured counts with its planned head count." %}
+          {% include "analytics/_kpi_card.html" with label="Man-hours Variance" value=report.totals.hc_variance_hours suffix="" icon="fa-scale-unbalanced" tone="amber" help="Real minus plan. Negative means the line ran with fewer people than planned; positive means extra people." %}
+          {% include "analytics/_kpi_card.html" with label="Hours Off Plan" value=report.totals.hc_hours_off_plan suffix="" icon="fa-user-xmark" tone="orange" help="Captured hours where the real head count was different from the plan." %}
+        </div>
       </div>
 
       {# ── Downtime plan vs real ──────────────────────────────── #}

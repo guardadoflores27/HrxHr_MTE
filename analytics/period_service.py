@@ -166,6 +166,8 @@ def build_period_report(period, anchor, **filters):
                        services.downtime_plan_vs_real_by_day(
                            date_from=start, date_to=end, **filters)),
         },
+        "headcount_plan_vs_real": services.headcount_plan_vs_real(
+            date_from=start, date_to=end, **filters),
         "comment_distribution": [
             {"type": k, "count": v} for k, v in
             sorted(comment_dist.items(), key=lambda kv: kv[1], reverse=True)

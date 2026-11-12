@@ -76,6 +76,10 @@
     {% include "analytics/_kpi_card.html" with label="Downtime Variance" value=kpis.downtime_variance_minutes suffix=" min" icon="fa-scale-unbalanced" tone="amber" help="Real downtime minus planned downtime. Positive means more time was lost than planned; negative means less." %}
     {% include "analytics/_kpi_card.html" with label="Planned Stops" value=kpis.planned_downtime_minutes suffix=" min" icon="fa-calendar-check" tone="amber" help="Part of Downtime Real that comes from stop types flagged as planned, such as lunch, preparation and finalization. Counted at the minutes actually recorded, so it can differ from Downtime Plan." %}
     {% include "analytics/_kpi_card.html" with label="Unplanned Stops" value=kpis.unplanned_downtime_minutes suffix=" min" icon="fa-triangle-exclamation" tone="orange" help="Part of Downtime Real that comes from unexpected stops, such as breakdowns, material shortages or quality issues. Planned Stops plus Unplanned Stops equals Downtime Real. This is the loss worth attacking first." %}
+    {% include "analytics/_kpi_card.html" with label="Man-hours Plan" value=kpis.hc_plan_hours suffix="" icon="fa-users" tone="blue" help="Person-hours the plan called for: the planned head count of every captured hour, added up. For example, 5 people over 8 hours is 40." %}
+    {% include "analytics/_kpi_card.html" with label="Man-hours Real" value=kpis.hc_real_hours suffix="" icon="fa-user-check" tone="emerald" help="Person-hours actually worked: the head count captured for every hour, added up. An hour where it was never captured counts with its planned head count." %}
+    {% include "analytics/_kpi_card.html" with label="Man-hours Variance" value=kpis.hc_variance_hours suffix="" icon="fa-scale-unbalanced" tone="amber" help="Real minus plan. Negative means the line ran with fewer people than planned; positive means extra people." %}
+    {% include "analytics/_kpi_card.html" with label="Hours Off Plan" value=kpis.hc_hours_off_plan suffix="" icon="fa-user-xmark" tone="orange" help="Captured hours where the real head count was different from the plan." %}
     {% include "analytics/_kpi_card.html" with label="# Events" value=kpis.number_of_events suffix="" icon="fa-list-ol" tone="slate" help="Total count of operational events recorded in the filtered scope, regardless of their duration or category." %}
     {% include "analytics/_kpi_card.html" with label="Avg Duration" value=kpis.average_duration_per_event suffix=" min" icon="fa-stopwatch" tone="cyan" help="Average length of a single operational event, in minutes. Total downtime divided by the number of events." %}
     {% include "analytics/_kpi_card.html" with label="Plan Achieved Hrs" value=kpis.plan_achieved_hours suffix="" icon="fa-circle-check" tone="emerald" help="Number of production hours where the actual quantity met or exceeded the planned quantity." %}
@@ -214,7 +218,7 @@ const period = new URLSearchParams(qs).get("period") || "day";
 function setKpiCard(label, value, suffix) {
   document.querySelectorAll("span.text-\\[11px\\]").forEach(el => {
     if (el.textContent.trim() === label) {
-      const val = el.closest("div")?.parentElement?.querySelector(".text-2xl");
+      const val = el.closest("div")?.parentElement?.querySelector(".kpi-value");
       if (val) val.textContent = (value === null || value === undefined) ? "—" : value + (suffix || "");
     }
   });

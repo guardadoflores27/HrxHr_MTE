@@ -914,7 +914,7 @@ class DashboardCleanupTestCase(TestCase):
     def test_day_table_footer_no_longer_repeats_totals(self):
         html = self.client.get(
             f"/analytics/day/?plan={self.plan.id}").content.decode()
-        self.assertIn("Head count for the day", html)
+        self.assertIn("Day totals", html)
         self.assertNotIn(">Totals<", html)
 
     def test_period_banner_no_longer_repeats_kpis(self):
@@ -1281,3 +1281,157 @@ class DowntimePlanVsRealTestCase(TestCase):
             self.assertTrue(any("Downtime variance (min)" in c for c in cells))
         self.assertTrue(export_service.day_report_to_pdf(day_rep)[:5] == b"%PDF-")
         self.assertTrue(export_service.period_report_to_pdf(per_rep)[:5] == b"%PDF-")
+
+
+class HeadcountPlanVsRealTestCase(TestCase):
+    """Fase 4 — head count PLAN vs REAL per hour and in man-hours.
+    real falls back to the planned head count when it was never captured."""
+
+    def setUp(self):
+        import random
+        s = str(random.randint(10000, 99999))
+        self.u = User.objects.create_user("hcr" + s, password="pw")
+        self.wc = WorkCenter.objects.create(name="WC-HCR" + s)
+        spt = SubProcessType.objects.create(
+            name="T-HCR" + s, applies_to="reactores", units_per_piece=1)
+        self.sp = SubProcess.objects.create(
+            work_center=self.wc, name="SP-HCR" + s, subprocess_type=spt)
+        self.shift = Shift.objects.create(
+            name="HCR" + s, code="H" + s[:3],
+            start_time=dt.time(6), end_time=dt.time(14), is_active=True)
+        self.plan = DailyPlan.objects.create(
+            date=dt.date(2027, 3, 8), work_center=self.wc, subprocess=self.sp,
+            headcount=5, shift=self.shift, operator=self.u, created_by=self.u)
+        self.model = PlanningModel.objects.create(name="HCR Model" + s)
+        # hour 1: plan 5 (the Daily Plan's).  hour 2: per-hour override of 4.
+        self.hp1 = HourlyPlan.objects.create(
+            daily_plan=self.plan, hour=dt.time(8), model=self.model,
+            planned_quantity=10)
+        self.hp2 = HourlyPlan.objects.create(
+            daily_plan=self.plan, hour=dt.time(9), model=self.model,
+            planned_quantity=10, headcount=4)
+        self.hp3 = HourlyPlan.objects.create(      # never captured
+            daily_plan=self.plan, hour=dt.time(10), model=self.model,
+            planned_quantity=10)
+        # hour 1 ran with 3 (short by 2); hour 2 was not captured → falls back to 4.
+        HourlyExecution.objects.create(
+            hourly_plan=self.hp1, actual_quantity=10, actual_headcount=3,
+            headcount_comment="two people were sick")
+        HourlyExecution.objects.create(
+            hourly_plan=self.hp2, actual_quantity=10)
+        self.client = Client()
+        self.client.login(username=self.u.username, password="pw")
+
+    def test_totals_in_man_hours(self):
+        r = services.headcount_plan_vs_real(work_center_id=self.wc.id)
+        self.assertEqual(r["hours"], 2)             # hour 3 has no execution
+        self.assertEqual(r["plan_hours"], 9)        # 5 + 4
+        self.assertEqual(r["real_hours"], 7)        # 3 + 4 (fallback)
+        self.assertEqual(r["variance_hours"], -2)
+        self.assertEqual(r["hours_off_plan"], 1)
+
+    def test_kpi_summary_has_headcount_keys(self):
+        k = services.kpi_summary(work_center_id=self.wc.id)
+        self.assertEqual((k["hc_plan_hours"], k["hc_real_hours"],
+                          k["hc_variance_hours"], k["hc_hours_off_plan"]),
+                         (9, 7, -2, 1))
+
+    def test_no_data_is_all_zero(self):
+        r = services.headcount_plan_vs_real(work_center_id=self.wc.id,
+                                            date_from=dt.date(2030, 1, 1))
+        self.assertEqual(r, {"hours": 0, "plan_hours": 0, "real_hours": 0,
+                             "variance_hours": 0, "hours_off_plan": 0})
+
+    def test_utilization_uses_real_head_count(self):
+        """20 pieces over 7 real person-hours = 2.86 (it would be 2.22 over the
+        9 planned person-hours)."""
+        self.assertEqual(
+            services.headcount_utilization(work_center_id=self.wc.id), 2.86)
+
+    def test_day_report_hour_level(self):
+        from analytics import day_service
+        rep = day_service.build_day_report(self.plan)
+        rows = rep["hourly_rows"]
+        self.assertEqual((rows[0]["planned_headcount"], rows[0]["actual_headcount"],
+                          rows[0]["headcount_diff"]), (5, 3, -2))
+        self.assertEqual(rows[0]["headcount_comment"], "two people were sick")
+        self.assertEqual((rows[1]["planned_headcount"], rows[1]["actual_headcount"],
+                          rows[1]["headcount_diff"]), (4, 4, 0))
+        self.assertIsNone(rows[2]["actual_headcount"])   # not captured
+        tot = rep["totals"]
+        self.assertEqual((tot["hc_plan_hours"], tot["hc_real_hours"],
+                          tot["hc_variance_hours"], tot["hc_hours_off_plan"]),
+                         (9, 7, -2, 1))
+
+    def test_day_period_and_services_agree(self):
+        from analytics import day_service, period_service as ps
+        day = day_service.build_day_report(self.plan)["totals"]
+        per = ps.build_period_report("month", dt.date(2027, 3, 8),
+                                     work_center_id=self.wc.id)["headcount_plan_vs_real"]
+        self.assertEqual(day["hc_plan_hours"], per["plan_hours"])
+        self.assertEqual(day["hc_real_hours"], per["real_hours"])
+        self.assertEqual(day["hc_hours_off_plan"], per["hours_off_plan"])
+
+    def test_respects_subprocess_filter(self):
+        import random
+        s2 = str(random.randint(10000, 99999))
+        spt2 = SubProcessType.objects.create(
+            name="T2-HCR" + s2, applies_to="reactores", units_per_piece=1)
+        sp2 = SubProcess.objects.create(
+            work_center=self.wc, name="OTHER-HCR" + s2, subprocess_type=spt2)
+        plan2 = DailyPlan.objects.create(
+            date=dt.date(2027, 3, 8), work_center=self.wc, subprocess=sp2,
+            headcount=9, shift=self.shift)
+        hp = HourlyPlan.objects.create(daily_plan=plan2, hour=dt.time(8),
+                                       model=self.model, planned_quantity=10)
+        HourlyExecution.objects.create(hourly_plan=hp, actual_quantity=10,
+                                       actual_headcount=1)
+        r = services.headcount_plan_vs_real(subprocess_id=self.sp.id)
+        self.assertEqual((r["plan_hours"], r["real_hours"]), (9, 7))
+
+    def test_dashboards_render_head_count(self):
+        r = self.client.get("/analytics/")
+        self.assertContains(r, "Man-hours Real")
+        r = self.client.get("/analytics/period/?period=month&anchor=2027-03-08")
+        self.assertContains(r, "Head Count — Plan vs Real")
+        r = self.client.get(f"/analytics/day/?plan={self.plan.id}")
+        self.assertContains(r, "Head Count — Plan vs Real")
+        self.assertContains(r, "HC Real")
+        self.assertContains(r, "HC Diff")
+        self.assertContains(r, "two people were sick")   # comment as tooltip
+
+    def test_exports_contain_head_count(self):
+        import io
+        from openpyxl import load_workbook
+        from analytics import day_service, period_service, export_service
+        day_rep = day_service.build_day_report(self.plan)
+        per_rep = period_service.build_period_report(
+            "month", dt.date(2027, 3, 8), work_center_id=self.wc.id)
+        for content in (export_service.day_report_to_excel(day_rep),
+                        export_service.period_report_to_excel(per_rep)):
+            ws = load_workbook(io.BytesIO(content)).active
+            cells = [str(c.value) for row in ws.iter_rows() for c in row if c.value]
+            self.assertTrue(any("Man-hours plan" in c for c in cells))
+            self.assertTrue(any("Man-hours variance" in c for c in cells))
+        self.assertTrue(export_service.day_report_to_pdf(day_rep)[:5] == b"%PDF-")
+        self.assertTrue(export_service.period_report_to_pdf(per_rep)[:5] == b"%PDF-")
+
+
+class KpiCardHookTestCase(TestCase):
+    """The Analytics page fills some KPI cards from the API with JavaScript
+    (HC Utilization, Std Time...). The script finds the value node by the
+    stable `kpi-value` class, so a restyle of the card can never silently
+    leave those cards showing a dash again."""
+
+    def setUp(self):
+        import random
+        s = str(random.randint(10000, 99999))
+        self.u = User.objects.create_user("kpi" + s, password="pw")
+        self.client = Client()
+        self.client.login(username=self.u.username, password="pw")
+
+    def test_card_has_stable_value_hook_and_js_uses_it(self):
+        html = self.client.get("/analytics/").content.decode()
+        self.assertIn('class="kpi-value ', html)
+        self.assertIn('querySelector(".kpi-value")', html)
+        self.assertNotIn('querySelector(".text-2xl")', html)

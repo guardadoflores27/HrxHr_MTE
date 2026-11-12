@@ -115,6 +115,15 @@ def day_report_to_excel(report):
         ("Completion %", t["completion_pct"]), ("Head Count", t["headcount"]),
     ]))
 
+    hc = report["totals"]
+    r = _xl_section(ws, r, "Head Count — Plan vs Real", ncols)
+    r = _xl_table(ws, r, ["Metric", "Value"], _kv_rows([
+        ("Man-hours plan", hc["hc_plan_hours"]),
+        ("Man-hours real", hc["hc_real_hours"]),
+        ("Man-hours variance", hc["hc_variance_hours"]),
+        ("Hours off plan", hc["hc_hours_off_plan"]),
+    ]))
+
     d = report["downtime_plan_vs_real"]
     r = _xl_section(ws, r, "Downtime — Plan vs Real", ncols)
     r = _xl_table(ws, r, ["Metric", "Value"], _kv_rows([
@@ -174,6 +183,15 @@ def period_report_to_excel(report):
         ("Overtime hours", w["overtime_hours"]),
         ("Planned downtime (min)", w["planned_downtime_min"]),
         ("Unplanned downtime (min)", w["unplanned_downtime_min"]),
+    ]))
+
+    hc = report["headcount_plan_vs_real"]
+    r = _xl_section(ws, r, "Head Count — Plan vs Real", ncols)
+    r = _xl_table(ws, r, ["Metric", "Value"], _kv_rows([
+        ("Man-hours plan", hc["plan_hours"]),
+        ("Man-hours real", hc["real_hours"]),
+        ("Man-hours variance", hc["variance_hours"]),
+        ("Hours off plan", hc["hours_off_plan"]),
     ]))
 
     d = report["downtime_plan_vs_real"]
@@ -282,6 +300,14 @@ def day_report_to_pdf(report):
         [width/7.0]*7))
     story.append(Spacer(1, 8))
 
+    hc = report["totals"]
+    story.append(Paragraph("Head Count — Plan vs Real", styles["Section"]))
+    story.append(_data_table(
+        ["Man-hours plan", "Man-hours real", "Variance", "Hours off plan"],
+        [[hc["hc_plan_hours"], hc["hc_real_hours"], hc["hc_variance_hours"], hc["hc_hours_off_plan"]]],
+        [width*0.25, width*0.25, width*0.25, width*0.25]))
+    story.append(Spacer(1, 8))
+
     d = report["downtime_plan_vs_real"]
     story.append(Paragraph("Downtime — Plan vs Real", styles["Section"]))
     story.append(_data_table(
@@ -351,6 +377,14 @@ def period_report_to_pdf(report):
         [[w["scheduled_hours"], w["real_working_hours"], w["overtime_hours"],
           w["planned_downtime_min"], w["unplanned_downtime_min"]]],
         [width/5.0]*5))
+    story.append(Spacer(1, 8))
+
+    hc = report["headcount_plan_vs_real"]
+    story.append(Paragraph("Head Count — Plan vs Real", styles["Section"]))
+    story.append(_data_table(
+        ["Man-hours plan", "Man-hours real", "Variance", "Hours off plan"],
+        [[hc["plan_hours"], hc["real_hours"], hc["variance_hours"], hc["hours_off_plan"]]],
+        [width*0.25, width*0.25, width*0.25, width*0.25]))
     story.append(Spacer(1, 8))
 
     d = report["downtime_plan_vs_real"]

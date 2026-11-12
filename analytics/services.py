@@ -18,7 +18,7 @@ from django.db.models import (
     Sum, Count, Avg, F, Q, IntegerField, Value, OuterRef, Subquery, Exists,
 )
 from django.db.models.functions import (
-    TruncDay, TruncWeek, TruncMonth, TruncYear, Greatest,
+    Coalesce, TruncDay, TruncWeek, TruncMonth, TruncYear, Greatest,
 )
 
 from planning.models import HourlyPlan, HourlyPlanBlock
@@ -426,6 +426,7 @@ def kpi_summary(**f):
     pva = planned_vs_actual(**f)
     good = good_quantity(**f)
     pdt = downtime_plan_vs_real(**f)
+    hcv = headcount_plan_vs_real(**f)
     return {
         "downtime_minutes":          downtime_minutes(**f),
         "planned_downtime_minutes":  planned_downtime_minutes(**f),
@@ -433,6 +434,10 @@ def kpi_summary(**f):
         "plan_downtime_minutes":     pdt["plan_min"],
         "real_downtime_minutes":     pdt["real_min"],
         "downtime_variance_minutes": pdt["variance_min"],
+        "hc_plan_hours":             hcv["plan_hours"],
+        "hc_real_hours":             hcv["real_hours"],
+        "hc_variance_hours":         hcv["variance_hours"],
+        "hc_hours_off_plan":         hcv["hours_off_plan"],
         "runtime_minutes":           runtime_minutes(**f),
         "production_time_minutes":   production_time_minutes(**f),
         "scheduled_minutes":         scheduled_minutes(**f),
@@ -487,6 +492,7 @@ def production_efficiency_pct(**f):
 
 def headcount_utilization(**f):
     """Rough head-count utilization: actual pieces produced per head, per hour.
+    Uses the REAL head count of each hour (planned one when not captured).
     Returns pieces/head/hour so it is comparable across plans of different HC."""
     qs = executions_qs(**f).select_related(
         "hourly_plan", "hourly_plan__daily_plan",
@@ -497,10 +503,44 @@ def headcount_utilization(**f):
     for ex in qs:
         factor = _factor_for_execution(ex)
         total_pieces += _pieces(ex.actual_quantity, factor)
-        total_head_hours += ex.hourly_plan.effective_headcount()  # 1 hour each
+        # REAL head count of the hour (falls back to the planned one when it
+        # was never captured), so pieces-per-head reflects who actually worked.
+        total_head_hours += ex.effective_actual_headcount  # 1 hour each
     if total_head_hours <= 0:
         return None
     return round(total_pieces / total_head_hours, 2)
+
+
+
+def headcount_plan_vs_real(**f):
+    """Head count PLAN vs REAL over the captured hours in scope, in man-hours
+    (one captured hour × the people on it).
+
+    plan  = planned head count of each captured hour (per-hour override or the
+            Daily Plan's).
+    real  = head count actually captured; when an hour never had it captured it
+            falls back to the planned one (same rule as
+            HourlyExecution.effective_actual_headcount), so legacy hours count
+            as "matches plan" instead of as zero people.
+    variance = real − plan: negative = the line ran short, positive = extra people.
+    hours_off_plan = captured hours whose real head count differs from the plan.
+    """
+    plan_expr = Coalesce(F("hourly_plan__headcount"),
+                         F("hourly_plan__daily_plan__headcount"),
+                         output_field=IntegerField())
+    real_expr = Coalesce(F("actual_headcount"), plan_expr,
+                         output_field=IntegerField())
+    qs = executions_qs(**f).annotate(_plan_hc=plan_expr, _real_hc=real_expr)
+    agg = qs.aggregate(hours=Count("id"), plan=Sum("_plan_hc"), real=Sum("_real_hc"))
+    plan, real = agg["plan"] or 0, agg["real"] or 0
+    off = qs.exclude(_real_hc=F("_plan_hc")).count()
+    return {
+        "hours": agg["hours"] or 0,
+        "plan_hours": plan,
+        "real_hours": real,
+        "variance_hours": real - plan,
+        "hours_off_plan": off,
+    }
 
 
 # ── Standard time (min/piece) & production rate (pieces/hour) ─────────────────
