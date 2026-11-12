@@ -293,7 +293,30 @@ def _group(field_id, field_label, **f):
 
 
 def by_category(**f):
-    return _group("event_type__category__id", "event_type__category__name", **f)
+    """Minutes and events per category, biggest first.
+
+    Event types that have no category (Machine Adjustment, Meeting, Other...)
+    get their own row named after the EVENT TYPE, with category id None, so the
+    charts and the Pareto never show a blank/"—" bar. Same rule as
+    category_plan_vs_real, which feeds the Day/Period tables.
+    """
+    events = events_qs(**f)
+    rows = list(
+        events.filter(event_type__category__isnull=False)
+        .values("event_type__category__id", "event_type__category__name")
+        .annotate(total_minutes=Sum("duration_minutes"), event_count=Count("id")))
+    for r in (events.filter(event_type__category__isnull=True)
+              .values("event_type__name")
+              .annotate(total_minutes=Sum("duration_minutes"),
+                        event_count=Count("id"))):
+        rows.append({
+            "event_type__category__id": None,
+            "event_type__category__name": r["event_type__name"] or "Uncategorized",
+            "total_minutes": r["total_minutes"],
+            "event_count": r["event_count"],
+        })
+    rows.sort(key=lambda r: -(r["total_minutes"] or 0))
+    return rows
 
 def by_event_type(**f):
     return _group("event_type__id", "event_type__name", **f)
@@ -339,10 +362,11 @@ def pareto_by_category(**f):
     total = sum(r["total_minutes"] or 0 for r in rows) or 1
     cum = 0
     for r in rows:
-        pct = round((r["total_minutes"] or 0) / total * 100, 1)
-        cum += pct
-        r["pct"] = pct
-        r["cumulative_pct"] = round(cum, 1)
+        r["pct"] = round((r["total_minutes"] or 0) / total * 100, 1)
+        # Accumulate the raw minutes, not the rounded pcts, so the last point is
+        # exactly 100 instead of drifting to 100.1 from rounding.
+        cum += r["total_minutes"] or 0
+        r["cumulative_pct"] = round(cum / total * 100, 1)
     return rows
 
 

@@ -1435,3 +1435,67 @@ class KpiCardHookTestCase(TestCase):
         self.assertIn('class="kpi-value ', html)
         self.assertIn('querySelector(".kpi-value")', html)
         self.assertNotIn('querySelector(".text-2xl")', html)
+
+
+class ByCategoryUncategorizedTestCase(TestCase):
+    """The Analytics charts (bar, doughnut, Pareto) must name event types that
+    have no category instead of showing a blank "—" bar."""
+
+    def setUp(self):
+        import random
+        s = str(random.randint(10000, 99999))
+        self.u = User.objects.create_user("bcu" + s, password="pw")
+        self.wc = WorkCenter.objects.create(name="WC-BCU" + s)
+        spt = SubProcessType.objects.create(
+            name="T-BCU" + s, applies_to="reactores", units_per_piece=1)
+        self.sp = SubProcess.objects.create(
+            work_center=self.wc, name="SP-BCU" + s, subprocess_type=spt)
+        self.shift = Shift.objects.create(
+            name="BCU" + s, code="B" + s[:3],
+            start_time=dt.time(6), end_time=dt.time(14), is_active=True)
+        plan = DailyPlan.objects.create(
+            date=dt.date(2027, 4, 5), work_center=self.wc, subprocess=self.sp,
+            headcount=5, shift=self.shift, operator=self.u, created_by=self.u)
+        model = PlanningModel.objects.create(name="BCU Model" + s)
+        hp = HourlyPlan.objects.create(daily_plan=plan, hour=dt.time(8),
+                                       model=model, planned_quantity=10)
+        ex = HourlyExecution.objects.create(hourly_plan=hp, actual_quantity=10)
+        from production.models import EventType
+        ExecutionEvent.objects.create(  # categorized
+            execution=ex, event_type=EventType.objects.get(name="Lunch"),
+            duration_minutes=30)
+        for name, mins in (("Machine Adjustment", 20), ("Meeting", 5)):
+            ExecutionEvent.objects.create(
+                execution=ex, event_type=EventType.objects.get(name=name),
+                duration_minutes=mins)
+        ExecutionEvent.objects.create(  # same uncategorized type twice
+            execution=ex, event_type=EventType.objects.get(name="Machine Adjustment"),
+            duration_minutes=10)
+        self.client = Client()
+        self.client.login(username=self.u.username, password="pw")
+
+    def test_by_category_names_uncategorized_event_types(self):
+        rows = {r["event_type__category__name"]: r
+                for r in services.by_category(work_center_id=self.wc.id)}
+        self.assertNotIn(None, rows)
+        self.assertEqual(rows["Machine Adjustment"]["total_minutes"], 30)
+        self.assertEqual(rows["Machine Adjustment"]["event_count"], 2)
+        self.assertEqual(rows["Meeting"]["total_minutes"], 5)
+        self.assertEqual(sum(r["total_minutes"] for r in rows.values()), 65)
+
+    def test_rows_sorted_biggest_first(self):
+        mins = [r["total_minutes"]
+                for r in services.by_category(work_center_id=self.wc.id)]
+        self.assertEqual(mins, sorted(mins, reverse=True))
+
+    def test_pareto_has_no_blank_label_and_reaches_100(self):
+        rows = services.pareto_by_category(work_center_id=self.wc.id)
+        self.assertTrue(all(r["event_type__category__name"] for r in rows))
+        self.assertEqual(rows[-1]["cumulative_pct"], 100.0)
+
+    def test_api_returns_named_rows(self):
+        import json
+        r = self.client.get(f"/analytics/api/by/category/?wc={self.wc.id}")
+        names = [x["event_type__category__name"] for x in json.loads(r.content)["rows"]]
+        self.assertIn("Machine Adjustment", names)
+        self.assertNotIn(None, names)
