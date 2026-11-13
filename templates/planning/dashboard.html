@@ -16,22 +16,22 @@
 <div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
 
   <div class="bg-white rounded-xl border border-gray-200 px-5 py-4 shadow-sm">
-    <p class="text-xs text-gray-400 font-medium uppercase tracking-wide">Daily Plans</p>
+    <p class="text-xs text-gray-400 font-medium uppercase tracking-wide">Daily Plans{% include "analytics/_info.html" with text="Total number of Daily Plans in the system. It does not change with the filters." align="left" pos="below" %}</p>
     <p class="text-3xl font-bold text-gray-900 mt-1 mono">{{ daily_plans }}</p>
   </div>
 
   <div class="bg-white rounded-xl border border-gray-200 px-5 py-4 shadow-sm">
-    <p class="text-xs text-gray-400 font-medium uppercase tracking-wide">Hourly Rows</p>
+    <p class="text-xs text-gray-400 font-medium uppercase tracking-wide">Hourly Rows{% include "analytics/_info.html" with text="Number of hourly rows (one model in one hour) that match the current filters. These are the rows of the table below." align="left" pos="below" %}</p>
     <p class="text-3xl font-bold text-blue-600 mt-1 mono">{{ total_rows }}</p>
   </div>
 
   <div class="bg-white rounded-xl border border-gray-200 px-5 py-4 shadow-sm">
-    <p class="text-xs text-gray-400 font-medium uppercase tracking-wide">Units Planned</p>
+    <p class="text-xs text-gray-400 font-medium uppercase tracking-wide">Units Planned{% include "analytics/_info.html" with text="Sum of the planned units of the rows that match the filters. Stored in units, not pieces." align="left" pos="below" %}</p>
     <p class="text-3xl font-bold text-emerald-600 mt-1 mono">{{ total_planned }}</p>
   </div>
 
   <div class="bg-white rounded-xl border border-gray-200 px-5 py-4 shadow-sm">
-    <p class="text-xs text-gray-400 font-medium uppercase tracking-wide">Units Actual</p>
+    <p class="text-xs text-gray-400 font-medium uppercase tracking-wide">Units Actual{% include "analytics/_info.html" with text="Sum of the actual units of the rows that match the filters. Only hours that already have captured Actuals are counted; pending hours add nothing." align="right" pos="below" %}</p>
     <p class="text-3xl font-bold text-violet-600 mt-1 mono">{{ total_actual }}</p>
   </div>
 
@@ -129,7 +129,7 @@
 
 
 {# Plan vs Real chart #}
-{% if not has_filters %}
+{% if not_has_filters %}
 <div class="bg-white rounded-xl border border-gray-200 shadow-sm px-5 py-4 mb-6">
   <div class="flex items-center justify-between mb-4">
     <p class="text-sm font-semibold text-gray-700">
@@ -185,16 +185,16 @@
     <table class="min-w-full text-sm">
       <thead>
         <tr class="bg-gray-50 border-b border-gray-100">
-          <th class="px-4 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Date</th>
-          <th class="px-4 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Work Center</th>
-          <th class="px-4 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Subprocess</th>
-          <th class="px-4 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Hour</th>
-          <th class="px-4 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Model</th>
-          <th class="px-4 py-2.5 text-right text-xs font-semibold text-gray-500 uppercase tracking-wide">Planned</th>
-          <th class="px-4 py-2.5 text-right text-xs font-semibold text-gray-500 uppercase tracking-wide">Actual</th>
-          <th class="px-4 py-2.5 text-right text-xs font-semibold text-gray-500 uppercase tracking-wide">Diff</th>
-          <th class="px-4 py-2.5 text-right text-xs font-semibold text-gray-500 uppercase tracking-wide">Eff %</th>
-          <th class="px-4 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Comment</th>
+          <th class="px-4 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide" title="Day of the Daily Plan.">Date</th>
+          <th class="px-4 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide" title="Work center the plan belongs to.">Work Center</th>
+          <th class="px-4 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide" title="Subprocess of the Daily Plan.">Subprocess</th>
+          <th class="px-4 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide" title="Start of the production hour.">Hour</th>
+          <th class="px-4 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide" title="Model planned for this hour. Each row is one model; an hour with 3 models shows 3 rows.">Model</th>
+          <th class="px-4 py-2.5 text-right text-xs font-semibold text-gray-500 uppercase tracking-wide" title="Units planned for this model in this hour.">Planned</th>
+          <th class="px-4 py-2.5 text-right text-xs font-semibold text-gray-500 uppercase tracking-wide" title="Units actually produced, as captured in Actuals. A dash means the hour has not been captured yet.">Actual</th>
+          <th class="px-4 py-2.5 text-right text-xs font-semibold text-gray-500 uppercase tracking-wide" title="Actual minus planned. Positive means overproduction, negative means a shortfall.">Diff</th>
+          <th class="px-4 py-2.5 text-right text-xs font-semibold text-gray-500 uppercase tracking-wide" title="Actual divided by planned, times 100. A dash when nothing was planned, because there is nothing to measure against.">Eff %</th>
+          <th class="px-4 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide" title="Comment explaining the hour, such as the loss or overproduction reason.">Comment</th>
         </tr>
       </thead>
       <tbody class="divide-y divide-gray-50">

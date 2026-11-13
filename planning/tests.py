@@ -972,7 +972,7 @@ class DashboardFiltersTestCase(TestCase):
     def test_chart_hidden_until_a_filter_is_applied(self):
         html = self.client.get("/").content.decode()
         self.assertNotIn('id="dashboardChart"', html)
-        self.assertIn("Choose a filter to see the chart", html)
+        self.assertIn("Choose a filter to see records", html)
 
     def test_chart_appears_once_filtered(self):
         html = self.client.get(f"/?wc={self.wc.id}").content.decode()

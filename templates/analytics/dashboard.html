@@ -132,17 +132,17 @@
       <canvas id="chartOtTrend" height="200"></canvas>
     </div>
     <div class="bg-white rounded-xl border border-slate-200 p-5">
-      <h3 class="text-sm font-semibold text-slate-700 mb-3">Downtime by Category <span class="text-xs text-slate-400">(share)</span></h3>
+      <h3 class="text-sm font-semibold text-slate-700 mb-3">Downtime by Category <span class="text-xs text-slate-400">(share)</span>{% include "analytics/_info.html" with text="The same downtime by category as the bar chart, shown as a share of the total. Event types without a category appear under their own name." %}</h3>
       <canvas id="chartDowntimeShare" height="200"></canvas>
     </div>
   </div>
 
   {# Performers #}
   <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-2">
-    {% include "analytics/_performer_table.html" with title="Top Work Centers" table_id="tblWcTop" %}
-    {% include "analytics/_performer_table.html" with title="Lowest Work Centers" table_id="tblWcBottom" %}
-    {% include "analytics/_performer_table.html" with title="Best Models" table_id="tblModelBest" %}
-    {% include "analytics/_performer_table.html" with title="Lowest Models" table_id="tblModelWorst" %}
+    {% include "analytics/_performer_table.html" with title="Top Work Centers" info="The 5 work centers with the highest productivity (actual pieces divided by planned pieces) in the filtered scope." table_id="tblWcTop" %}
+    {% include "analytics/_performer_table.html" with title="Lowest Work Centers" info="The 5 work centers with the lowest productivity (actual pieces divided by planned pieces) in the filtered scope. These are the first candidates to review." table_id="tblWcBottom" %}
+    {% include "analytics/_performer_table.html" with title="Best Models" info="The 5 models with the highest productivity (actual pieces divided by planned pieces) in the filtered scope." table_id="tblModelBest" %}
+    {% include "analytics/_performer_table.html" with title="Lowest Models" info="The 5 models with the lowest productivity (actual pieces divided by planned pieces) in the filtered scope." table_id="tblModelWorst" %}
   </div>
 
 </div>

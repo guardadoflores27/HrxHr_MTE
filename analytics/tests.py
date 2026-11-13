@@ -1499,3 +1499,62 @@ class ByCategoryUncategorizedTestCase(TestCase):
         names = [x["event_type__category__name"] for x in json.loads(r.content)["rows"]]
         self.assertIn("Machine Adjustment", names)
         self.assertNotIn(None, names)
+
+
+class TooltipCoverageTestCase(TestCase):
+    """Fase 4 — every metric on the Dashboard, Analytics, Day and Period pages
+    must explain itself on hover: each table column header carries a `title`,
+    and the cards/chart titles carry the styled info tooltip."""
+
+    def setUp(self):
+        import random, re
+        s = str(random.randint(10000, 99999))
+        self.u = User.objects.create_user("tip" + s, password="pw")
+        wc = WorkCenter.objects.create(name="WC-TIP" + s)
+        spt = SubProcessType.objects.create(
+            name="T-TIP" + s, applies_to="reactores", units_per_piece=1)
+        sp = SubProcess.objects.create(work_center=wc, name="SP-TIP" + s,
+                                       subprocess_type=spt)
+        shift = Shift.objects.create(
+            name="TIP" + s, code="T" + s[:3],
+            start_time=dt.time(6), end_time=dt.time(14), is_active=True)
+        self.plan = DailyPlan.objects.create(
+            date=dt.date(2027, 5, 3), work_center=wc, subprocess=sp, headcount=5,
+            shift=shift, operator=self.u, created_by=self.u)
+        model = PlanningModel.objects.create(name="TIP Model" + s)
+        hp = HourlyPlan.objects.create(daily_plan=self.plan, hour=dt.time(8),
+                                       model=model, planned_quantity=10)
+        HourlyExecution.objects.create(hourly_plan=hp, actual_quantity=10)
+        self.client = Client()
+        self.client.login(username=self.u.username, password="pw")
+        self.re = re
+
+    def _untitled_headers(self, html):
+        heads = self.re.findall(r"<th\b[^>]*>.*?</th>", html, flags=self.re.S)
+        return [h for h in heads if "title=" not in h]
+
+    def test_every_table_header_has_a_tooltip(self):
+        from django.urls import reverse
+        pages = {
+            # The planning dashboard only lists rows once a filter is applied.
+            "dashboard": reverse("planning:dashboard") + "?date=2027-05-03",
+            "day": f"/analytics/day/?plan={self.plan.id}",
+            "period": "/analytics/period/?period=month&anchor=2027-05-03",
+            "analytics": "/analytics/",
+        }
+        for name, url in pages.items():
+            html = self.client.get(url).content.decode()
+            self.assertIn("<th", html, f"{name}: no table rendered")
+            self.assertEqual(self._untitled_headers(html), [],
+                             f"{name}: headers without a tooltip")
+
+    def test_planning_dashboard_cards_explain_themselves(self):
+        from django.urls import reverse
+        html = self.client.get(reverse("planning:dashboard")).content.decode()
+        self.assertIn("does not change with the filters", html)   # Daily Plans
+        self.assertIn("Only hours that already have captured Actuals", html)
+
+    def test_analytics_charts_and_rankings_explain_themselves(self):
+        html = self.client.get("/analytics/").content.decode()
+        self.assertIn("shown as a share of the total", html)       # doughnut
+        self.assertIn("The 5 work centers with the lowest productivity", html)

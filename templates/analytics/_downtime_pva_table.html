@@ -5,10 +5,10 @@
     <table class="min-w-full text-xs">
       <thead class="bg-slate-50 text-slate-500 uppercase">
         <tr>
-          <th class="px-3 py-2 text-left">{{ first_label }}</th>
-          <th class="px-3 py-2 text-right">Plan (min)</th>
-          <th class="px-3 py-2 text-right">Real (min)</th>
-          <th class="px-3 py-2 text-right">Variance (min)</th>
+          <th class="px-3 py-2 text-left" title="{{ first_label }} the downtime is grouped by.">{{ first_label }}</th>
+          <th class="px-3 py-2 text-right" title="Minutes of downtime scheduled in the plan as Time Blocks.">Plan (min)</th>
+          <th class="px-3 py-2 text-right" title="Minutes of downtime actually recorded as events.">Real (min)</th>
+          <th class="px-3 py-2 text-right" title="Real minus plan. Positive means more downtime than planned.">Variance (min)</th>
         </tr>
       </thead>
       <tbody class="divide-y divide-slate-50">

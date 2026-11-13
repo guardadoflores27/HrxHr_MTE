@@ -165,18 +165,18 @@
           <table class="min-w-full text-xs">
             <thead class="bg-slate-50 text-slate-500 uppercase">
               <tr>
-                <th class="px-3 py-2 text-left">Hour</th>
-                <th class="px-3 py-2 text-left">Model</th>
-                <th class="px-3 py-2 text-right">Planned (pc)</th>
-                <th class="px-3 py-2 text-right">Actual (pc)</th>
-                <th class="px-3 py-2 text-right" title="Head count the hour was planned with">HC Plan</th>
-                <th class="px-3 py-2 text-right" title="Head count actually captured for the hour">HC Real</th>
-                <th class="px-3 py-2 text-right" title="Real minus plan. Negative means the line ran short">HC Diff</th>
-                <th class="px-3 py-2 text-right" title="Downtime scheduled in the plan for this hour, in minutes">DT Plan</th>
-                <th class="px-3 py-2 text-right" title="Downtime actually recorded for this hour, in minutes">DT Real</th>
-                <th class="px-3 py-2 text-right" title="Real minus plan. Positive means more downtime than planned">DT Var</th>
-                <th class="px-3 py-2 text-left">Status</th>
-                <th class="px-3 py-2 text-left">Comment</th>
+                <th class="px-3 py-2 text-left" title="Start of the production hour.">Hour</th>
+                <th class="px-3 py-2 text-left" title="Model produced in this hour.">Model</th>
+                <th class="px-3 py-2 text-right" title="Pieces planned for this hour. Stored in units and converted with the subprocess conversion factor.">Planned (pc)</th>
+                <th class="px-3 py-2 text-right" title="Pieces actually produced, converted from units. A dash means the hour has not been captured yet.">Actual (pc)</th>
+                <th class="px-3 py-2 text-right" title="Head count the hour was planned with.">HC Plan</th>
+                <th class="px-3 py-2 text-right" title="Head count actually captured for the hour.">HC Real</th>
+                <th class="px-3 py-2 text-right" title="Real minus plan. Negative means the line ran short.">HC Diff</th>
+                <th class="px-3 py-2 text-right" title="Downtime scheduled in the plan for this hour, in minutes.">DT Plan</th>
+                <th class="px-3 py-2 text-right" title="Downtime actually recorded for this hour, in minutes.">DT Real</th>
+                <th class="px-3 py-2 text-right" title="Real minus plan. Positive means more downtime than planned.">DT Var</th>
+                <th class="px-3 py-2 text-left" title="Automatic result of comparing planned and actual: plan achieved, not achieved, exceeded, non-productive or pending.">Status</th>
+                <th class="px-3 py-2 text-left" title="Comment captured for the hour, such as the loss or overproduction reason.">Comment</th>
               </tr>
             </thead>
             <tbody class="divide-y divide-slate-50">
@@ -227,11 +227,11 @@
           <table class="min-w-full text-xs">
             <thead class="bg-slate-50 text-slate-500 uppercase">
               <tr>
-                <th class="px-3 py-2 text-left">Model</th>
-                <th class="px-3 py-2 text-right">Planned (pc)</th>
-                <th class="px-3 py-2 text-right">Actual (pc)</th>
-                <th class="px-3 py-2 text-right">Units P/A</th>
-                <th class="px-3 py-2 text-right">Productivity</th>
+                <th class="px-3 py-2 text-left" title="Model produced.">Model</th>
+                <th class="px-3 py-2 text-right" title="Pieces planned for this model, converted from units.">Planned (pc)</th>
+                <th class="px-3 py-2 text-right" title="Pieces actually produced for this model, converted from units.">Actual (pc)</th>
+                <th class="px-3 py-2 text-right" title="Planned units over actual units, before converting to pieces.">Units P/A</th>
+                <th class="px-3 py-2 text-right" title="Actual pieces divided by planned pieces, times 100. A dash when nothing was planned.">Productivity</th>
               </tr>
             </thead>
             <tbody class="divide-y divide-slate-50">
