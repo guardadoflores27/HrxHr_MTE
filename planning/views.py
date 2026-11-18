@@ -12,6 +12,7 @@ from django.http                    import JsonResponse
 from django.shortcuts               import get_object_or_404, redirect, render
 from django.views.decorators.http   import require_POST
 
+from core.limits         import check_headcount, check_quantity
 from core.models         import Shift, SubProcess, WorkCenter
 from production.models   import HourlyExecution
 from users.decorators    import not_operator_write, get_role
@@ -21,7 +22,8 @@ from .models   import DailyPlan, HourlyPlan, HourlyPlanBlock, Model
 from .services import (
     add_block, can_delete, can_edit_headcount, can_move_blocks,
     can_write as svc_can_write, generate_shift_slots, get_hourly_board,
-    remove_block, sort_by_shift, update_headcount,
+    is_valid_block_slot, remove_block, sort_by_shift,
+    update_headcount,
 )
 
 
@@ -47,6 +49,20 @@ def _qs_prefix(request):
     params.pop("page", None)
     encoded = params.urlencode()
     return f"{encoded}&" if encoded else ""
+
+def _parse_optional_headcount(raw, label="Headcount override"):
+    """(value, error). Blank / None -> (None, None): the hour follows the plan.
+    Anything else must be a whole number within the allowed range — an invalid
+    value is now reported instead of being silently dropped."""
+    if raw is None or str(raw).strip() == "":
+        return None, None
+    try:
+        value = int(raw)
+    except (ValueError, TypeError):
+        return None, f"{label} must be a whole number."
+    err = check_headcount(value, label)
+    return (None, err) if err else (value, None)
+
 
 def _json_ok(data=None):
     payload = {"ok": True}
@@ -89,7 +105,7 @@ def dashboard(request):
     if has_filters:
         qs = HourlyPlan.objects.select_related(
             "daily_plan__work_center", "daily_plan__subprocess",
-            "daily_plan__shift", "model"
+            "daily_plan__shift", "model", "hourlyexecution"
         ).order_by("-daily_plan__date", "hour", "model__name")
     
         if wc_id:    qs = qs.filter(daily_plan__work_center_id=wc_id)
@@ -414,10 +430,11 @@ def api_add_row(request, plan_id):
 
     try:
         qty = int(qty)
-        if qty < 0:
-            raise ValueError
     except (ValueError, TypeError):
         return _json_error("Invalid quantity.")
+    err = check_quantity(qty)
+    if err:
+        return _json_error(err)
 
     if is_ot and plan.shift:
         if _is_hour_inside_shift(hour_time, plan.shift):
@@ -427,6 +444,16 @@ def api_add_row(request, plan_id):
                 f"({sh.start_time.strftime('%I:%M %p')} – {sh.end_time.strftime('%I:%M %p')}). "
                 f"Overtime must be outside the shift window."
             )
+    # A regular (non-overtime) hour has to be an hour of the shift. Anything
+    # outside it must be created as overtime, otherwise it shows up in the
+    # overtime list without being flagged as overtime.
+    if not is_ot and plan.shift and not _is_hour_inside_shift(hour_time, plan.shift):
+        sh = plan.shift
+        return _json_error(
+            f"The hour {hour_str} is outside the {sh.name} shift "
+            f"({sh.start_time.strftime('%I:%M %p')} – {sh.end_time.strftime('%I:%M %p')}). "
+            f"Use Add Overtime Hours for hours outside the shift."
+        )
 
     # ── Multiple models per hour are allowed — regular AND overtime ──────────
     # An hour slot (regular or overtime) may now contain several HourlyPlan
@@ -443,12 +470,9 @@ def api_add_row(request, plan_id):
             f"Edit the existing row instead of adding it twice."
         )
 
-    hc_val = None
-    if hc_over is not None:
-        try:
-            hc_val = int(hc_over)
-        except (ValueError, TypeError):
-            pass
+    hc_val, hc_err = _parse_optional_headcount(hc_over)
+    if hc_err:
+        return _json_error(hc_err)
 
     hp = HourlyPlan.objects.create(
         daily_plan=plan, hour=hour_time, model=model,
@@ -526,17 +550,18 @@ def api_edit_row(request, plan_id, hp_id):
     if qty is not None:
         try:
             qty_int = int(qty)
-            if qty_int < 0:
-                raise ValueError
-            hp.planned_quantity = qty_int
         except (ValueError, TypeError):
             return _json_error("Invalid quantity.")
+        err = check_quantity(qty_int)
+        if err:
+            return _json_error(err)
+        hp.planned_quantity = qty_int
 
     if hc_over is not None:
-        try:
-            hp.headcount = int(hc_over) if str(hc_over).strip() else None
-        except (ValueError, TypeError):
-            hp.headcount = None
+        hc_val, hc_err = _parse_optional_headcount(hc_over)
+        if hc_err:
+            return _json_error(hc_err)
+        hp.headcount = hc_val
 
     hp.comments = comments
     hp.save()
@@ -586,6 +611,10 @@ def api_add_block(request, plan_id):
         slot_dt = dt.datetime.strptime(slot_time, "%H:%M").time()
     except ValueError:
         return _json_error("Invalid slot_time format.")
+    if not is_valid_block_slot(plan, slot_dt):
+        return _json_error(
+            f"{slot_time} is not an hour of this plan. Time Blocks can only be "
+            f"placed on an hour of the shift or on an overtime hour of this plan.")
 
     existing_mins = (
         HourlyPlanBlock.objects
@@ -602,7 +631,9 @@ def api_add_block(request, plan_id):
     try:
         new_minutes = int(minutes)
     except (ValueError, TypeError):
-        new_minutes = 0
+        return _json_error("Invalid duration.")
+    if new_minutes < 1:
+        return _json_error("A Time Block must last at least 1 minute.")
 
     if existing_mins >= slot_duration:
         return _json_error(
@@ -646,9 +677,13 @@ def api_edit_block(request, plan_id, block_id):
 
     if minutes is not None:
         try:
-            new_minutes = max(0, int(minutes))
+            new_minutes = int(minutes)
         except (ValueError, TypeError):
             return _json_error("Invalid minutes value.")
+        if new_minutes < 1:
+            return _json_error(
+                "A Time Block must last at least 1 minute. "
+                "Use the trash icon to remove it.")
 
         from django.db.models import Sum
         slot_time_str = block.slot_time.strftime("%H:%M")

@@ -752,7 +752,7 @@
     <div class="space-y-3">
       <div>
         <label class="block text-xs font-semibold text-gray-600 mb-1">Duration (minutes)</label>
-        <input type="number" id="bem-minutes" min="0" max="60"
+        <input type="number" id="bem-minutes" min="1" max="60"
                class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm
                       focus:border-blue-500 focus:ring-1 focus:outline-none">
       </div>
@@ -795,7 +795,7 @@
     <div class="space-y-3">
       <div>
         <label class="block text-xs font-semibold text-gray-600 mb-1">Duration (minutes)</label>
-        <input type="number" id="bm-minutes" min="0" max="60" value="30"
+        <input type="number" id="bm-minutes" min="1" max="60" value="30"
                class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm
                       focus:border-blue-500 focus:ring-1 focus:outline-none">
       </div>
@@ -1921,8 +1921,8 @@ function saveBlockEdit() {
   }
   const reason   = document.getElementById("bem-reason")?.value?.trim() || "";
 
-  if (isNaN(minutes) || minutes < 0) {
-    errEl.textContent = "Please enter a valid duration.";
+  if (isNaN(minutes) || minutes < 1) {
+    errEl.textContent = "A Time Block must last at least 1 minute. Use the trash icon to remove it.";
     errEl.classList.remove("hidden");
     return;
   }
@@ -2029,7 +2029,12 @@ function handleDrop(e, slotEl) {
 
   pendingDrop = { slotEl, block: { ...draggedBlock }, isPending: slotEl.dataset.pending === "true" };
   document.getElementById("block-modal-title").textContent = draggedBlock.label;
-  document.getElementById("bm-minutes").value              = draggedBlock.minutes;
+  // "Extra Reason" has no default length (0); start at 15 so the form is valid.
+  document.getElementById("bm-minutes").value              = draggedBlock.minutes || 15;
+  // Start every drop with a clean form: an error from a previous attempt
+  // (or a previous block type) must not carry over.
+  document.getElementById("block-modal-err")?.remove();
+  document.getElementById("bm-minutes").classList.remove("border-red-400");
   const rw = document.getElementById("bm-reason-wrap");
   const ri = document.getElementById("bm-reason");
   if (draggedBlock.id === "extra") {
@@ -2052,6 +2057,20 @@ function confirmBlock() {
   const reason = block.id === "extra"
     ? (document.getElementById("bm-reason")?.value?.trim() || "")
     : "";
+
+  // A block must last at least 1 minute (the server rejects 0 as well).
+  if (mins < 1) {
+    let errEl0 = document.getElementById("block-modal-err");
+    if (!errEl0) {
+      errEl0 = document.createElement("p");
+      errEl0.id        = "block-modal-err";
+      errEl0.className = "text-xs text-red-500 font-semibold mt-2";
+      document.getElementById("bm-minutes").after(errEl0);
+    }
+    errEl0.textContent = "A Time Block must last at least 1 minute.";
+    document.getElementById("bm-minutes").classList.add("border-red-400");
+    return;
+  }
 
   // Validate: total blocks must not exceed slot duration
   const totalSlotMin  = parseInt(slotEl.dataset.slotMin, 10) || 60;

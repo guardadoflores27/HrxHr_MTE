@@ -801,20 +801,39 @@ function howToFix(reason) {
   if (r.includes("loss comment"))         return "Enter the loss comment and save again.";
   if (r.includes("overproduction"))       return "Enter the overproduction comment and save again.";
   if (r.includes("non-productive"))       return "Enter a comment for this non-productive hour and save again.";
+  if (r.includes("scrap_quantity"))       return "Enter a valid Scrap quantity (0 or more) and save again.";
+  if (r.includes("actual_headcount") || r.includes("head count"))
+                                          return "Enter a valid real head count and save again.";
   if (r.includes("actual"))               return "Enter a valid Actual Quantity and save again.";
   if (r.includes("event"))                return "Select a valid Operational Event and save again.";
   if (r.includes("comment"))              return "Enter a comment and save again.";
   return "Fix the highlighted field and save again.";
 }
 
+// Input that the backend error refers to. Errors from form fields come as
+// "<field>: <message>"; anything else falls back to the Actual input.
+function errorFieldInput(hpId, reason) {
+  const m = /^(actual_quantity|scrap_quantity|actual_headcount):/.exec(reason || "");
+  if (m) {
+    const el = document.querySelector(`[name="hp-${hpId}-${m[1]}"]`);
+    if (el) return el;
+  }
+  return document.querySelector(`.actual-input[data-hp="${hpId}"]`);
+}
+
 function clearRowError(hpId) {
+  document.querySelectorAll(`[name^="hp-${hpId}-"].field-error`)
+    .forEach(el => el.classList.remove("field-error"));
   const input = document.querySelector(`.actual-input[data-hp="${hpId}"]`);
   input?.classList.remove("field-error");
   document.getElementById(`row-error-${hpId}`)?.remove();
 }
 
 function showRowError(hpId, errors) {
-  const input = document.querySelector(`.actual-input[data-hp="${hpId}"]`);
+  // A previous failure may have marked a different field of this row.
+  document.querySelectorAll(`[name^="hp-${hpId}-"].field-error`)
+    .forEach(el => el.classList.remove("field-error"));
+  const input = errorFieldInput(hpId, errors[0]);
   input?.classList.add("field-error");
 
   // Anchor the detail box in the comments cell of that row.

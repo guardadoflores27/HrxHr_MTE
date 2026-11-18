@@ -2,7 +2,8 @@
 # COPY-PASTE → hrxhr_project/production/forms.py
 
 from django import forms
-from django.forms import inlineformset_factory
+from django.forms import BaseInlineFormSet, inlineformset_factory
+from core.limits import MAX_QUANTITY, check_headcount, check_quantity
 from .models import HourlyExecution, LossReason, EventType, ExecutionEvent
 
 _input   = ("w-full rounded-lg border border-gray-300 px-3 py-2 text-sm shadow-sm "
@@ -25,8 +26,10 @@ class HourlyExecutionForm(forms.ModelForm):
     actual_quantity = forms.IntegerField(
         required=False,
         min_value=0,
+        max_value=MAX_QUANTITY,
         error_messages={
             "min_value": "Actual quantity cannot be negative. Please enter 0 or more.",
+            "max_value": f"Actual quantity cannot be greater than {MAX_QUANTITY:,}.",
             "invalid":   "Enter a valid whole number for actual quantity.",
         },
         widget=forms.NumberInput(attrs={
@@ -40,9 +43,11 @@ class HourlyExecutionForm(forms.ModelForm):
     scrap_quantity = forms.IntegerField(
         required=False,
         min_value=0,
+        max_value=MAX_QUANTITY,
         initial=0,
         error_messages={
             "min_value": "Scrap quantity cannot be negative. Please enter 0 or more.",
+            "max_value": f"Scrap quantity cannot be greater than {MAX_QUANTITY:,}.",
             "invalid":   "Enter a valid whole number for scrap quantity.",
         },
         widget=forms.NumberInput(attrs={
@@ -100,6 +105,16 @@ class HourlyExecutionForm(forms.ModelForm):
         for f in ("comments", "scrap_comments", "over_comments",
                   "ok_comments", "zero_comment"):
             self.fields[f].required = False
+
+    def clean_actual_headcount(self):
+        # The "min" on the input is only a browser hint; enforce it here too.
+        # 0 is allowed (nobody worked that hour), blank means "not captured".
+        val = self.cleaned_data.get("actual_headcount")
+        if val is not None:
+            err = check_headcount(val, "Head count", minimum=0)
+            if err:
+                raise forms.ValidationError(err)
+        return val
 
     def clean_actual_quantity(self):
         val = self.cleaned_data.get("actual_quantity")
@@ -195,10 +210,44 @@ class ExecutionEventForm(forms.ModelForm):
         return cleaned
 
 
+class BaseExecutionEventFormSet(BaseInlineFormSet):
+    """The events of one hour cannot add up to more than the hour itself.
+
+    A typo such as 600 instead of 60 would otherwise inflate Downtime Real,
+    the Pareto and every downtime card, while Runtime (floored at 0) hides it.
+    The view sets `slot_minutes` (60, or less for a partial last slot of the
+    shift) before validating; without it the check is skipped."""
+    slot_minutes = None
+
+    def clean(self):
+        super().clean()
+        limit = self.slot_minutes
+        if not limit:
+            return
+        total = 0
+        for form in self.forms:
+            cd = getattr(form, "cleaned_data", None)
+            if not cd or cd.get("DELETE"):
+                continue
+            minutes = cd.get("duration_minutes")
+            if not minutes:
+                continue
+            total += minutes
+            if total > limit:
+                # Reported on the event that goes over, so it reaches the
+                # same error list the single-event checks already use.
+                form.add_error(
+                    None,
+                    f"The events of this hour add up to {total} min, but the hour "
+                    f"only has {limit} min. Check the duration.")
+                return
+
+
 ExecutionEventFormSet = inlineformset_factory(
     HourlyExecution,
     ExecutionEvent,
     form=ExecutionEventForm,
+    formset=BaseExecutionEventFormSet,
     extra=0,
     can_delete=True,
 )

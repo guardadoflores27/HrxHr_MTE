@@ -1405,3 +1405,113 @@ class BlockReasonOnlyForExtraTestCase(TestCase):
             self.assertTrue(r["ok"])
             self.assertNotEqual(r["label"], "Posada")
             self.assertEqual(HourlyPlanBlock.objects.get(id=r["block_id"]).reason, "")
+
+
+class ServerSideLimitsTestCase(TestCase):
+    """The AJAX endpoints and forms must enforce the same limits as the UI.
+    Without them a crafted/typo'd value is stored on SQLite and crashes
+    Postgres (integer out of range) in production."""
+
+    def setUp(self):
+        u = User.objects.create_user("lim", password="pw")
+        UserProfile.objects.filter(user=u).update(role="leader")
+        u = User.objects.get(pk=u.pk)
+        self.wc = WorkCenter.objects.create(name="WC-LIM")
+        self.wc2 = WorkCenter.objects.create(name="WC-LIM2")
+        spt = SubProcessType.objects.create(name="T-LIM", applies_to="reactores", units_per_piece=1)
+        self.sp = SubProcess.objects.create(work_center=self.wc, name="SP-LIM", subprocess_type=spt)
+        self.sp2 = SubProcess.objects.create(work_center=self.wc2, name="SP-LIM2", subprocess_type=spt)
+        self.shift = Shift.objects.create(name="LIM", code="LIM", start_time=dt.time(6),
+                                          end_time=dt.time(14), is_active=True)
+        self.plan = DailyPlan.objects.create(date=dt.date(2027, 4, 5), work_center=self.wc,
+                                             subprocess=self.sp, headcount=5, shift=self.shift)
+        self.model = PlanningModel.objects.create(name="LIM Model")
+        self.client = Client()
+        self.client.force_login(u)
+
+    def _post(self, name, payload, *args):
+        return self.client.post(reverse(f"planning:{name}", args=args or [self.plan.id]),
+                                data=json.dumps(payload), content_type="application/json").json()
+
+    def _row(self, **kw):
+        base = {"hour": "08:00", "model_id": self.model.id, "quantity": 10}
+        base.update(kw)
+        return self._post("api_add_row", base)
+
+    # 1 — quantity / headcount caps
+    def test_huge_quantity_is_rejected(self):
+        self.assertFalse(self._row(quantity=99999999999)["ok"])
+        self.assertFalse(self._row(quantity=-1)["ok"])
+        self.assertEqual(HourlyPlan.objects.count(), 0)
+
+    def test_edit_row_huge_quantity_is_rejected(self):
+        hp = HourlyPlan.objects.create(daily_plan=self.plan, hour=dt.time(8),
+                                       model=self.model, planned_quantity=10)
+        r = self._post("api_edit_row", {"quantity": 99999999999}, self.plan.id, hp.id)
+        self.assertFalse(r["ok"])
+        hp.refresh_from_db()
+        self.assertEqual(hp.planned_quantity, 10)
+
+    # 2 — headcount override
+    def test_invalid_headcount_override_is_reported_not_dropped(self):
+        for bad in ("abc", 0, -3, 5000):
+            self.assertFalse(self._row(headcount_override=bad)["ok"], bad)
+        self.assertEqual(HourlyPlan.objects.count(), 0)
+
+    def test_valid_and_blank_headcount_override(self):
+        self.assertTrue(self._row(headcount_override=7)["ok"])
+        self.assertEqual(HourlyPlan.objects.get().headcount, 7)
+
+    def test_edit_row_invalid_headcount_override(self):
+        hp = HourlyPlan.objects.create(daily_plan=self.plan, hour=dt.time(8),
+                                       model=self.model, planned_quantity=10)
+        r = self._post("api_edit_row", {"headcount_override": "x"}, self.plan.id, hp.id)
+        self.assertFalse(r["ok"])
+
+    def test_update_headcount_service_caps(self):
+        from .services import update_headcount
+        ok, msg, _ = update_headcount(self.plan, 10**9, "typo", User.objects.get(username="lim"))
+        self.assertFalse(ok)
+
+    # 3 — DailyPlanForm
+    def test_daily_plan_subprocess_must_match_work_center(self):
+        from .forms import DailyPlanForm
+        form = DailyPlanForm(data={"date": "2027-04-06", "work_center": self.wc.id,
+                                   "subprocess": self.sp2.id, "shift": self.shift.id,
+                                   "headcount": 3})
+        self.assertFalse(form.is_valid())
+        self.assertIn("subprocess", form.errors)
+
+    def test_daily_plan_headcount_limits(self):
+        from .forms import DailyPlanForm
+        for hc in (0, 5000):
+            form = DailyPlanForm(data={"date": "2027-04-06", "work_center": self.wc.id,
+                                       "subprocess": self.sp.id, "shift": self.shift.id,
+                                       "headcount": hc})
+            self.assertFalse(form.is_valid(), hc)
+
+    # 4 — regular hour must be inside the shift
+    def test_regular_hour_outside_shift_is_rejected(self):
+        r = self._row(hour="20:00")
+        self.assertFalse(r["ok"])
+        self.assertEqual(HourlyPlan.objects.count(), 0)
+
+    def test_overtime_outside_shift_still_works(self):
+        self.assertTrue(self._row(hour="20:00", is_overtime=True)["ok"])
+
+    def test_block_on_a_slot_outside_the_plan_is_rejected(self):
+        r = self._post("api_add_block", {"slot_time": "20:00", "block_type": "lunch", "minutes": 10})
+        self.assertFalse(r["ok"])
+        r = self._post("api_add_block", {"slot_time": "08:00", "block_type": "lunch", "minutes": 10})
+        self.assertTrue(r["ok"])
+
+    # 5 — blocks need at least 1 minute
+    def test_zero_minute_block_is_rejected(self):
+        for m in (0, -5, "x"):
+            r = self._post("api_add_block", {"slot_time": "08:00", "block_type": "lunch", "minutes": m})
+            self.assertFalse(r["ok"], m)
+
+    def test_edit_block_to_zero_minutes_is_rejected(self):
+        r = self._post("api_add_block", {"slot_time": "08:00", "block_type": "lunch", "minutes": 10})
+        r2 = self._post("api_edit_block", {"minutes": 0}, self.plan.id, r["block_id"])
+        self.assertFalse(r2["ok"])

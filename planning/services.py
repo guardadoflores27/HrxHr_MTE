@@ -1,6 +1,7 @@
 import datetime as dt
 from django.utils import timezone
 from users.decorators import get_role as get_user_role
+from core.limits import check_headcount
 from .models import DailyPlan, HourlyPlan, HourlyPlanBlock, HeadcountAudit
 
 
@@ -66,6 +67,26 @@ def generate_shift_slots(shift):
         cur = nxt
 
     return slots
+
+
+def slot_minutes(plan, hour_time):
+    """Length in minutes of the hour starting at `hour_time` on `plan`: 60 for a
+    normal hour, less for a partial last slot of the shift. Overtime hours and
+    hours outside the shift are full hours."""
+    key = hour_time.strftime("%H:%M")
+    for sl in generate_shift_slots(getattr(plan, "shift", None)):
+        if sl["start"] == key:
+            return sl["minutes"]
+    return 60
+
+
+def is_valid_block_slot(plan, slot_time):
+    """A Time Block can only sit on an hour of the plan: a slot of its shift, or
+    an overtime hour that already exists on the plan."""
+    key = slot_time.strftime("%H:%M")
+    if any(sl["start"] == key for sl in generate_shift_slots(plan.shift)):
+        return True
+    return HourlyPlan.objects.filter(daily_plan=plan, hour=slot_time).exists()
 
 
 # ─── Hourly board builder ─────────────────────────────────────────────────────
@@ -243,8 +264,9 @@ def update_headcount(daily_plan, new_value, comment, user, apply_to_all=False):
         return False, "A comment is required when modifying headcount.", 0
     try:
         new_value = int(new_value)
-        if new_value < 1:
-            return False, "Headcount must be at least 1.", 0
+        err = check_headcount(new_value)
+        if err:
+            return False, err, 0
     except (ValueError, TypeError):
         return False, "Invalid headcount value.", 0
 

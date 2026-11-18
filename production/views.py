@@ -10,7 +10,7 @@ from django.db import transaction
 from django.http import JsonResponse
 
 from planning.models import DailyPlan, HourlyPlan, HourlyPlanBlock
-from planning.services import format_blocks_summary, blocks_categories_joined, sort_by_shift
+from planning.services import format_blocks_summary, blocks_categories_joined, slot_minutes, sort_by_shift
 from core.models import WorkCenter, Shift, SubProcess
 from .models import HourlyExecution, ExecutionLossReason, EventType, LossReason
 from .forms import HourlyExecutionForm, ExecutionEventFormSet
@@ -219,6 +219,7 @@ def execution_enter(request, plan_id):
             event_formset = ExecutionEventFormSet(
                 request.POST, instance=execution, prefix=event_prefix
             )
+            event_formset.slot_minutes = slot_minutes(plan, hp.hour)
 
             if raw_actual == "":
                 initial = {}
@@ -414,6 +415,12 @@ def execution_enter(request, plan_id):
                 for field, errs in form.errors.items():
                     for e in errs:
                         form_errs.append(f"{field}: {e}" if field != "__all__" else e)
+                # Event errors too, so the inline message says what is wrong
+                # instead of a generic "Invalid data.".
+                if not events_valid:
+                    for ef in event_formset.forms:
+                        for e in ef.non_field_errors():
+                            form_errs.append(f"Event: {e}")
                 row_results.append({
                     "hp_id": hp.id,
                     "hour":  hp.hour.strftime("%I:%M %p"),

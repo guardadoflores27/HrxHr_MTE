@@ -608,3 +608,48 @@ class ExecutionListPaginationTestCase(_TestCase):
         r = self.client.get(f"/production/?work_center={self.wc.id}&page=2")
         self.assertEqual(len(r.context["page_obj"]), 10)
         self.assertEqual(len(r.context["enriched"]), 10)
+
+
+class ActualsServerLimitsTestCase(ExecutionAjaxSaveTestCase):
+    """Actuals limits enforced on the server: quantity cap, real head count
+    range, and the events of one hour not exceeding the hour."""
+
+    def _events(self, items):
+        from production.models import EventType
+        et, _ = EventType.objects.get_or_create(name="Lim Event")
+        pre = f"hp-{self.hp.id}-events"
+        d = {f"{pre}-TOTAL_FORMS": str(len(items)), f"{pre}-INITIAL_FORMS": "0",
+             f"{pre}-MIN_NUM_FORMS": "0", f"{pre}-MAX_NUM_FORMS": "1000"}
+        for i, mins in enumerate(items):
+            d[f"{pre}-{i}-event_type"] = str(et.id)
+            d[f"{pre}-{i}-duration_minutes"] = str(mins)
+        return d
+
+    def _save(self, extra=None, events=None):
+        data = {f"hp-{self.hp.id}-actual_quantity": "10",
+                f"hp-{self.hp.id}-scrap_quantity": "0", **(extra or {})}
+        data.update(events if events is not None else self._mgmt())
+        return self.client.post(self.url, data, HTTP_X_REQUESTED_WITH="XMLHttpRequest").json()
+
+    def test_huge_actual_or_scrap_is_rejected(self):
+        self.assertFalse(self._save({f"hp-{self.hp.id}-actual_quantity": "99999999999"})["ok"])
+        self.assertFalse(self._save({f"hp-{self.hp.id}-scrap_quantity": "99999999999"})["ok"])
+        self.assertEqual(_HE.objects.count(), 0)
+
+    def test_real_headcount_range(self):
+        for bad in ("-1", "5000"):
+            self.assertFalse(self._save({f"hp-{self.hp.id}-actual_headcount": bad,
+                                         f"hp-{self.hp.id}-headcount_comment": "x"})["ok"], bad)
+
+    def test_events_cannot_exceed_the_hour(self):
+        r = self._save(events=self._events([40, 40]))
+        self.assertFalse(r["ok"])
+        row = [x for x in r["rows"] if not x["saved"]][0]
+        self.assertTrue(any("add up" in e for e in row["errors"]), row["errors"])
+        self.assertEqual(_HE.objects.count(), 0)
+
+    def test_single_event_over_sixty_is_rejected(self):
+        self.assertFalse(self._save(events=self._events([600]))["ok"])
+
+    def test_events_within_the_hour_are_saved(self):
+        self.assertTrue(self._save(events=self._events([30, 30]))["ok"])

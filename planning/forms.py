@@ -4,6 +4,7 @@
 # ─────────────────────────────────────────────────────────────────────────────
 
 from django import forms
+from core.limits import check_headcount, check_quantity
 from .models import DailyPlan, HourlyPlan
 from core.models import Shift
 
@@ -39,6 +40,23 @@ class DailyPlanForm(forms.ModelForm):
         date       = cleaned.get("date")
         subprocess = cleaned.get("subprocess")
         shift      = cleaned.get("shift")
+
+        # ── Subprocess must belong to the chosen work center ──────────────────
+        # The dependent dropdown only filters in the browser; the server has to
+        # enforce it too or a plan can end up under the wrong work center.
+        work_center = cleaned.get("work_center")
+        if work_center and subprocess and subprocess.work_center_id != work_center.id:
+            self.add_error(
+                "subprocess",
+                f"'{subprocess.name}' belongs to {subprocess.work_center.name}, "
+                f"not to {work_center.name}.")
+
+        # ── Head count limits ─────────────────────────────────────────────────
+        hc = cleaned.get("headcount")
+        if hc is not None:
+            err = check_headcount(hc)
+            if err:
+                self.add_error("headcount", err)
 
         # ── Duplicate plan check ──────────────────────────────────────────────
         if date and subprocess and shift:
@@ -93,6 +111,22 @@ class HourlyPlanForm(forms.ModelForm):
         super().__init__(*args, **kwargs)
         self.fields["headcount"].required = False
         self.fields["comments"].required  = False
+
+    def clean_planned_quantity(self):
+        val = self.cleaned_data.get("planned_quantity")
+        if val is not None:
+            err = check_quantity(val, "Planned quantity")
+            if err:
+                raise forms.ValidationError(err)
+        return val
+
+    def clean_headcount(self):
+        val = self.cleaned_data.get("headcount")
+        if val is not None:
+            err = check_headcount(val, "Headcount override")
+            if err:
+                raise forms.ValidationError(err)
+        return val
 
 
 # ─── Headcount edit (used in headcount modal) ─────────────────────────────────
