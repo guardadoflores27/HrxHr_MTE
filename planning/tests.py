@@ -996,6 +996,22 @@ class DashboardFiltersTestCase(TestCase):
         self.assertIn(self.plan_a.id, plan_ids)
         self.assertNotIn(self.plan_b.id, plan_ids)
 
+    def test_table_is_paginated_at_20_rows(self):
+        # setUp already created 2 rows for self.wc; add 24 more (distinct
+        # minutes so they never collide) to get 26 in total.
+        for h in range(24):
+            HourlyPlan.objects.create(
+                daily_plan=self.plan_a, hour=dt.time(h, 30),
+                model=self.model, planned_quantity=1)
+        r = self.client.get(f"/?wc={self.wc.id}")
+        self.assertEqual(len(r.context["page_obj"]), 20)
+        self.assertEqual(r.context["page_obj"].paginator.count, 26)
+        self.assertEqual(r.context["page_obj"].paginator.num_pages, 2)
+        # the row counter and totals keep using the whole filtered set
+        self.assertEqual(r.context["total_rows"], 26)
+        r2 = self.client.get(f"/?wc={self.wc.id}&page=2")
+        self.assertEqual(len(r2.context["page_obj"]), 6)
+
     def test_all_four_selects_rendered(self):
         html = self.client.get("/").content.decode()
         for name in ['name="wc"', 'name="subprocess"', 'name="shift"', 'name="date"']:
@@ -1260,3 +1276,132 @@ class DailyPlanCreatedByFilterTestCase(TestCase):
         html = r.content.decode()
         self.assertIn("plancreator1", html)
         self.assertIn("plancreator2", html)
+
+class OvernightShiftOrderTestCase(TestCase):
+    """A shift that crosses midnight (7 PM -> 6:30 AM) must list its hours in the
+    order they happen: 7 PM ... 11 PM, then 12 AM, 1 AM — never midnight first."""
+
+    def setUp(self):
+        self.u = User.objects.create_user("ovn", password="pw")
+        UserProfile.objects.update_or_create(user=self.u, defaults={"role": "leader"})
+        wc = WorkCenter.objects.create(name="WC-OVN")
+        spt = SubProcessType.objects.create(name="T-OVN", applies_to="reactores", units_per_piece=1)
+        sp = SubProcess.objects.create(work_center=wc, name="SP-OVN", subprocess_type=spt)
+        self.shift = Shift.objects.create(name="Night-OVN", code="NOV",
+                                          start_time=dt.time(19), end_time=dt.time(6, 30),
+                                          is_active=True)
+        self.plan = DailyPlan.objects.create(date=dt.date(2027, 3, 1), work_center=wc,
+                                             subprocess=sp, headcount=5, shift=self.shift)
+        m = PlanningModel.objects.create(name="OVN Model")
+        for h in (0, 1, 19, 20, 23):
+            HourlyPlan.objects.create(daily_plan=self.plan, hour=dt.time(h),
+                                      model=m, planned_quantity=1)
+        self.client = Client()
+        self.client.force_login(self.u)
+        self.expected = [dt.time(19), dt.time(20), dt.time(23), dt.time(0), dt.time(1)]
+
+    def test_helper_orders_a_crossing_shift_by_shift_time(self):
+        from .services import sort_by_shift
+        rows = sort_by_shift(HourlyPlan.objects.filter(daily_plan=self.plan).order_by("hour"),
+                             self.shift)
+        self.assertEqual([r.hour for r in rows], self.expected)
+
+    def test_helper_keeps_plain_order_for_a_day_shift(self):
+        from .services import sort_by_shift
+        day = Shift.objects.create(name="Day-OVN", code="DOV",
+                                   start_time=dt.time(6), end_time=dt.time(14), is_active=True)
+        rows = sort_by_shift(HourlyPlan.objects.filter(daily_plan=self.plan).order_by("hour"), day)
+        self.assertEqual([r.hour for r in rows],
+                         [dt.time(0), dt.time(1), dt.time(19), dt.time(20), dt.time(23)])
+
+    def test_board_lists_hours_in_shift_order(self):
+        r = self.client.get(reverse("planning:hourly_plan_board"))
+        card = next(c for c in r.context["board_cards"] if c["plan"].id == self.plan.id)
+        self.assertEqual([x["hour"] for x in card["rows"]], self.expected)
+
+    def test_actuals_lists_hours_in_shift_order(self):
+        import re
+        r = self.client.get(reverse("production:execution_enter", args=[self.plan.id]))
+        rows = [x["hp"].hour for x in r.context["rows"]]
+        self.assertEqual(rows, self.expected)
+
+    def test_day_report_lists_hours_in_shift_order(self):
+        from analytics import day_service
+        rep = day_service.build_day_report(self.plan)
+        self.assertEqual([x["hour_sort"] for x in rep["hourly_rows"]],
+                         ["19:00", "20:00", "23:00", "00:00", "01:00"])
+        
+
+class PlanCommentVisibilityTestCase(TestCase):
+    """The optional comment typed on an Hourly Plan row must show up where the
+    people working that hour will see it: the plan page and Actuals."""
+
+    def setUp(self):
+        u = User.objects.create_user("pcv", password="pw")
+        UserProfile.objects.filter(user=u).update(role="leader")
+        u = User.objects.get(pk=u.pk)
+        wc = WorkCenter.objects.create(name="WC-PCV")
+        spt = SubProcessType.objects.create(name="T-PCV", applies_to="reactores", units_per_piece=1)
+        sp = SubProcess.objects.create(work_center=wc, name="SP-PCV", subprocess_type=spt)
+        shift = Shift.objects.create(name="PCV", code="PCV", start_time=dt.time(6),
+                                     end_time=dt.time(14), is_active=True)
+        self.plan = DailyPlan.objects.create(date=dt.date(2027, 3, 2), work_center=wc,
+                                             subprocess=sp, headcount=5, shift=shift)
+        m = PlanningModel.objects.create(name="PCV Model")
+        HourlyPlan.objects.create(daily_plan=self.plan, hour=dt.time(8), model=m,
+                                  planned_quantity=10, comments="Use the new fixture")
+        HourlyPlan.objects.create(daily_plan=self.plan, hour=dt.time(9), model=m,
+                                  planned_quantity=10)
+        self.client = Client()
+        self.client.force_login(u)
+
+    def test_plan_page_shows_the_comment(self):
+        html = self.client.get(reverse("planning:hourly_plan", args=[self.plan.id])).content.decode()
+        self.assertEqual(html.count('class="row-note'), 1)       # only the row that has one
+        self.assertIn("Use the new fixture</p>", html)
+        # the edit button carries it too, so re-opening the modal does not blank it
+        import re
+        self.assertTrue(re.search(r"openEditModal\(\d+,[^)]*Use[^)]*fixture", html))
+
+    def test_actuals_page_shows_the_comment(self):
+        html = self.client.get(reverse("production:execution_enter", args=[self.plan.id])).content.decode()
+        self.assertIn("Use the new fixture", html)
+
+
+class BlockReasonOnlyForExtraTestCase(TestCase):
+    """A custom reason typed for "Extra Reason" must never end up on another
+    Time Block type (Lunch, Pre-Op, ...)."""
+
+    def setUp(self):
+        u = User.objects.create_user("brx", password="pw")
+        UserProfile.objects.filter(user=u).update(role="leader")
+        u = User.objects.get(pk=u.pk)
+        wc = WorkCenter.objects.create(name="WC-BRX")
+        spt = SubProcessType.objects.create(name="T-BRX", applies_to="reactores", units_per_piece=1)
+        sp = SubProcess.objects.create(work_center=wc, name="SP-BRX", subprocess_type=spt)
+        shift = Shift.objects.create(name="BRX", code="BRX", start_time=dt.time(6),
+                                     end_time=dt.time(14), is_active=True)
+        self.plan = DailyPlan.objects.create(date=dt.date(2027, 3, 4), work_center=wc,
+                                             subprocess=sp, headcount=5, shift=shift)
+        self.client = Client()
+        self.client.force_login(u)
+
+    def _add(self, block_type, reason):
+        return self.client.post(
+            reverse("planning:api_add_block", args=[self.plan.id]),
+            data=json.dumps({"slot_time": "08:00", "block_type": block_type,
+                             "minutes": 10, "reason": reason}),
+            content_type="application/json").json()
+
+    def test_extra_keeps_its_custom_reason(self):
+        r = self._add("extra", "Posada")
+        self.assertTrue(r["ok"])
+        self.assertEqual(r["label"], "Posada")
+
+    def test_other_block_types_drop_a_stray_reason(self):
+        from .models import HourlyPlanBlock
+        for bt in ("lunch", "preop", "workfin", "chair"):
+            r = self._add(bt, "Posada")
+            self.assertTrue(r["ok"])
+            self.assertNotEqual(r["label"], "Posada")
+            self.assertEqual(HourlyPlanBlock.objects.get(id=r["block_id"]).reason, "")

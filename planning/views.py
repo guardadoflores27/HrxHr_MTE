@@ -21,7 +21,7 @@ from .models   import DailyPlan, HourlyPlan, HourlyPlanBlock, Model
 from .services import (
     add_block, can_delete, can_edit_headcount, can_move_blocks,
     can_write as svc_can_write, generate_shift_slots, get_hourly_board,
-    remove_block, update_headcount,
+    remove_block, sort_by_shift, update_headcount,
 )
 
 
@@ -119,7 +119,7 @@ def dashboard(request):
         total_actual  = sum(c for c in chart_actual if c is not None)
         total_rows    = qs.count()
     
-        paginator = Paginator(qs, 50)
+        paginator = Paginator(qs, 20)
         page_obj  = paginator.get_page(request.GET.get("page"))
     
     return render(request, "planning/dashboard.html", {
@@ -776,7 +776,7 @@ def hourly_plan_board(request):
     for plan in plans_on_page:
         # .all() (not a fresh filter/order_by) so this reads from the
         # Prefetch cache above instead of issuing one query per plan.
-        raw_rows = plan.hourly_plans.all()
+        raw_rows = sort_by_shift(plan.hourly_plans.all(), plan.shift)
         enriched = []
         for r in raw_rows:
             h_dt  = dt.datetime.combine(dt.date.today(), r.hour)

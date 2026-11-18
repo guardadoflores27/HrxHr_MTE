@@ -4,6 +4,32 @@ from users.decorators import get_role as get_user_role
 from .models import DailyPlan, HourlyPlan, HourlyPlanBlock, HeadcountAudit
 
 
+def shift_order_key(shift):
+    """Sort key that lists clock times in the order they happen during `shift`.
+
+    A plain ORDER BY hour puts 12:00 AM before 7:00 PM, which is wrong for a
+    shift that crosses midnight (7:00 PM -> 6:30 AM): its night hours would show
+    ABOVE the evening ones. Measuring each time as minutes since the shift
+    start (wrapping at 24h) gives 7 PM, 8 PM ... 11 PM, 12 AM, 1 AM ...
+    For a shift that does not cross midnight the order is the plain clock order.
+    Works on times and on objects with an `.hour` time (HourlyPlan rows).
+    """
+    if not shift or not shift.crosses_midnight:
+        return lambda x: getattr(x, "hour", x)
+    start = shift.start_time.hour * 60 + shift.start_time.minute
+
+    def key(x):
+        t = getattr(x, "hour", x)
+        return (t.hour * 60 + t.minute - start) % 1440
+    return key
+
+
+def sort_by_shift(rows, shift):
+    """`rows` (HourlyPlan queryset/iterable) as a list in shift order. Ties keep
+    their incoming order, so several models in the same hour stay as they were."""
+    return sorted(rows, key=shift_order_key(shift))
+
+
 # ─── Shift slot generator ─────────────────────────────────────────────────────
 
 def generate_shift_slots(shift):
@@ -78,7 +104,7 @@ def get_hourly_board(plan):
     rows_by_slot     = {}
     ot_rows_by_slot  = {}
     ot_slot_order    = []
-    for hp in hp_qs:
+    for hp in sort_by_shift(hp_qs, plan.shift):
         key = hp.hour.strftime("%H:%M")
         if hp.is_overtime or key not in slot_starts:
             if key not in ot_rows_by_slot:
@@ -188,7 +214,9 @@ def add_block(daily_plan, slot_time_str, block_type, minutes, reason, user):
         slot_time  = slot_dt,
         block_type = block_type,
         minutes    = max(0, int(minutes)),
-        reason     = (reason or "").strip(),
+        # Only "Extra Reason" carries a custom text; for every other block type
+        # a stray reason is dropped instead of being stored.
+        reason     = (reason or "").strip() if block_type == HourlyPlanBlock.BLOCK_EXTRA else "",
         created_by = user,
     )
 

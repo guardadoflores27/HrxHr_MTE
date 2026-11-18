@@ -169,7 +169,7 @@
       <p class="nav-section-label px-3 pt-1 pb-2 text-xs font-semibold uppercase tracking-widest text-slate-500">Planning</p>
 
       <a title="Dashboard" href="{% url 'planning:dashboard' %}"
-         class="nav-item {% if request.resolver_match.url_name == 'dashboard' %}active{% endif %}">
+         class="nav-item {% if request.resolver_match.namespace == 'planning' and request.resolver_match.url_name == 'dashboard' %}active{% endif %}">
         <i class="fas fa-chart-line icon"></i><span class="sidebar-label">Dashboard</span>
       </a>
       <a title="Daily Plans" href="{% url 'planning:daily_plan_list' %}"

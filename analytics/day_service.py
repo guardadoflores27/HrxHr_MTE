@@ -14,6 +14,7 @@ import datetime as dt
 from django.db.models import Sum, Prefetch
 
 from planning.models import DailyPlan, HourlyPlan, HourlyPlanBlock
+from planning.services import sort_by_shift
 from production.models import HourlyExecution, ExecutionEvent
 from . import services
 from .services import yield_pct_of, downtime_variance
@@ -106,10 +107,10 @@ def build_day_report(plan):
     """
     factor = plan.subprocess.conversion_factor if plan.subprocess_id else 1
 
-    hours = (HourlyPlan.objects
-             .filter(daily_plan=plan)
-             .select_related("model")
-             .order_by("hour"))
+    hours = sort_by_shift(
+        HourlyPlan.objects.filter(daily_plan=plan)
+        .select_related("model").order_by("hour"),
+        plan.shift)
 
     # One execution per (hour, model); prefetch to avoid N+1.
     exec_by_hp = {

@@ -10,7 +10,7 @@ from django.db import transaction
 from django.http import JsonResponse
 
 from planning.models import DailyPlan, HourlyPlan, HourlyPlanBlock
-from planning.services import format_blocks_summary, blocks_categories_joined
+from planning.services import format_blocks_summary, blocks_categories_joined, sort_by_shift
 from core.models import WorkCenter, Shift, SubProcess
 from .models import HourlyExecution, ExecutionLossReason, EventType, LossReason
 from .forms import HourlyExecutionForm, ExecutionEventFormSet
@@ -180,9 +180,11 @@ def execution_list(request):
 @not_operator_write
 def execution_enter(request, plan_id):
     plan  = get_object_or_404(DailyPlan, id=plan_id)
-    hours = HourlyPlan.objects.filter(
-        daily_plan=plan
-    ).select_related("model").order_by("hour")
+    # Shift order (a 7 PM -> 6:30 AM shift lists 7 PM first, 12 AM after 11 PM).
+    hours = sort_by_shift(
+        HourlyPlan.objects.filter(daily_plan=plan)
+        .select_related("model").order_by("hour"),
+        plan.shift)
 
     # ── Pre-fetch time blocks for all slots (for planned=0 auto-reason) ──────
     blocks_qs = HourlyPlanBlock.objects.filter(daily_plan=plan).order_by("slot_time", "created_at")

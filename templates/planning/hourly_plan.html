@@ -275,12 +275,13 @@
       {# Existing rows — a slot can now hold one or several models #}
       <div class="space-y-1.5 mb-3" id="rows-{{ slot.start|cut:':' }}">
         {% for hp in slot.rows %}
-        <div class="flex items-center gap-3 bg-gray-50 rounded-lg px-3 py-2.5 group border border-gray-100"
+        <div class="flex flex-wrap items-center gap-3 bg-gray-50 rounded-lg px-3 py-2.5 group border border-gray-100"
              id="hp-row-{{ hp.id }}">
           <span class="flex-1 text-xs font-semibold text-gray-700 row-model-name">{{ hp.model.name }}</span>
           <span class="mono text-sm font-bold text-gray-800 row-qty">{{ hp.planned_quantity }}</span>
           <span class="text-xs text-gray-400">pcs</span>
           <span class="text-[10px] text-gray-400 ml-1 row-hc">HC: {{ hp.effective_headcount }}</span>
+          {% if hp.comments %}<p class="row-note basis-full w-full text-[11px] text-gray-500 italic leading-snug"><i class="fas fa-note-sticky mr-1 text-gray-300"></i>{{ hp.comments }}</p>{% endif %}
 
           {% if can_write %}
           <button type="button"
@@ -454,13 +455,14 @@
         {# Models for this overtime hour #}
         <div class="space-y-1.5 mb-3" id="rows-{{ slot.start|cut:':' }}">
           {% for hp in slot.rows %}
-          <div class="flex items-center gap-3 bg-amber-50 rounded-lg px-3 py-2.5 group border border-amber-100"
+          <div class="flex flex-wrap items-center gap-3 bg-amber-50 rounded-lg px-3 py-2.5 group border border-amber-100"
                id="hp-row-{{ hp.id }}"
                data-ot-hour="{{ slot.start }}">
             <span class="flex-1 text-xs font-semibold text-gray-700 row-model-name">{{ hp.model.name }}</span>
             <span class="mono text-sm font-bold text-amber-700 row-qty">{{ hp.planned_quantity }}</span>
             <span class="text-xs text-gray-400">pcs</span>
             <span class="text-[10px] text-gray-400 ml-1 row-hc">HC: {{ hp.effective_headcount }}</span>
+            {% if hp.comments %}<p class="row-note basis-full w-full text-[11px] text-gray-500 italic leading-snug"><i class="fas fa-note-sticky mr-1 text-gray-300"></i>{{ hp.comments }}</p>{% endif %}
             {% if can_write %}
             <button type="button"
                     onclick="openEditModal({{ hp.id }}, '{{ hp.model.name }}', {{ hp.model.id }}, {{ hp.planned_quantity }}, {{ hp.effective_headcount }}, '{{ hp.comments|escapejs }}')"
@@ -945,6 +947,22 @@ const BLOCK_COLORS = {
 // ═══════════════════════════════════════════════════════════════════════════
 function slotKey(t) { return t.replace(":", ""); }
 
+// Comment of a plan row: shown under the row and kept inside the edit button.
+function jsq(s) {   // safe inside a '...' JS string that sits in an HTML attribute
+  return String(s || "").replace(/\\/g, "\\\\").replace(/'/g, "\\'")
+    .replace(/\r?\n/g, "\\n").replace(/"/g, "&quot;");
+}
+function setRowNote(rowEl, text) {
+  let n = rowEl.querySelector(".row-note");
+  if (!text) { if (n) n.remove(); return; }
+  if (!n) {
+    n = document.createElement("p");
+    n.className = "row-note basis-full w-full text-[11px] text-gray-500 italic leading-snug";
+    rowEl.querySelector(".row-hc").insertAdjacentElement("afterend", n);
+  }
+  n.textContent = text;
+}
+
 function postJSON(url, body) {
   return fetch(url, {
     method:  "POST",
@@ -1170,8 +1188,8 @@ function wireAddRowButton(btn) {
       const div = document.createElement("div");
       div.id        = "hp-row-" + data.id;
       div.className = isOt
-        ? "flex items-center gap-3 bg-amber-50 rounded-lg px-3 py-2.5 group border border-amber-100"
-        : "flex items-center gap-3 bg-gray-50 rounded-lg px-3 py-2.5 group border border-gray-100";
+        ? "flex flex-wrap items-center gap-3 bg-amber-50 rounded-lg px-3 py-2.5 group border border-amber-100"
+        : "flex flex-wrap items-center gap-3 bg-gray-50 rounded-lg px-3 py-2.5 group border border-gray-100";
       if (isOt) div.dataset.otHour = slotTime;
       div.innerHTML = `
         <span class="flex-1 text-xs font-semibold text-gray-700 row-model-name">${data.model}</span>
@@ -1183,7 +1201,7 @@ function wireAddRowButton(btn) {
                        text-xs p-1.5 rounded hover:bg-blue-50 transition"
                 title="Edit this row"
                 onclick="openEditModal(${data.id}, '${data.model.replace(/'/g,"\\'")}',
-                         ${data.model_id}, ${data.qty}, ${data.hc}, '')">
+                         ${data.model_id}, ${data.qty}, ${data.hc}, '${jsq(data.comments)}')">
           <i class="fas fa-pen-to-square"></i>
         </button>
         <button type="button"
@@ -1195,6 +1213,7 @@ function wireAddRowButton(btn) {
         </button>
       `;
       rowsEl.appendChild(div);
+      setRowNote(div, data.comments);
 
       // Keep the add-model form visible (and relabel it) so the user can
       // stack another model in the same hour right away. Works the same
@@ -1313,12 +1332,13 @@ function saveEdit() {
       if (modelSpan) modelSpan.textContent = data.model;
       if (qtySpan)   qtySpan.textContent   = data.qty;
       if (hcSpan)    hcSpan.textContent    = "HC: " + data.hc;
+      setRowNote(rowEl, data.comments);
 
       // Also update the onclick of the edit button so next open reflects new values
       const editBtn = rowEl.querySelector("button[title='Edit this row'], button[title='Edit this overtime row']");
       if (editBtn) {
         editBtn.setAttribute("onclick",
-          `openEditModal(${hpId}, '${data.model.replace(/'/g, "\\'")}', ${data.model_id}, ${data.qty}, ${data.hc}, '')`
+          `openEditModal(${hpId}, '${data.model.replace(/'/g, "\\'")}', ${data.model_id}, ${data.qty}, ${data.hc}, '${jsq(data.comments)}')`
         );
       }
 
@@ -1782,7 +1802,7 @@ function saveOvertimeSlot(slotTime, uid, btn, label12) {
     const rowsEl = newCard.querySelector(`#rows-${key}`);
     const rowDiv = document.createElement("div");
     rowDiv.id        = "hp-row-" + data.id;
-    rowDiv.className = "flex items-center gap-3 bg-amber-50 rounded-lg px-3 py-2.5 group border border-amber-100";
+    rowDiv.className = "flex flex-wrap items-center gap-3 bg-amber-50 rounded-lg px-3 py-2.5 group border border-amber-100";
     rowDiv.dataset.otHour = slotTime;
     rowDiv.innerHTML = `
       <span class="flex-1 text-xs font-semibold text-gray-700 row-model-name">${data.model}</span>
@@ -1794,7 +1814,7 @@ function saveOvertimeSlot(slotTime, uid, btn, label12) {
                      text-xs p-1.5 rounded hover:bg-blue-50 transition"
               title="Edit this row"
               onclick="openEditModal(${data.id}, '${data.model.replace(/'/g,"\\'")}',
-                       ${data.model_id}, ${data.qty}, ${data.hc}, '')">
+                       ${data.model_id}, ${data.qty}, ${data.hc}, '${jsq(data.comments)}')">
         <i class="fas fa-pen-to-square"></i>
       </button>
       <button type="button"
@@ -1806,6 +1826,7 @@ function saveOvertimeSlot(slotTime, uid, btn, label12) {
       </button>
     `;
     rowsEl.appendChild(rowDiv);
+    setRowNote(rowDiv, data.comments);
 
     // Persist any Time Blocks that were dropped on this pending slot, then
     // render their pills on the now-permanent card and recalc effective time.
@@ -2014,15 +2035,23 @@ function handleDrop(e, slotEl) {
   if (draggedBlock.id === "extra") {
     rw.classList.remove("hidden");
     if (ri) ri.value = "";
-  } else { rw.classList.add("hidden"); }
+  } else { 
+    rw.classList.add("hidden");
+    if (ri) ri.value = "";
+  }
   document.getElementById("block-modal").classList.remove("hidden");
 }
 
 function confirmBlock() {
   if (!pendingDrop) return;
   const mins   = parseInt(document.getElementById("bm-minutes").value, 10) || 0;
-  const reason = document.getElementById("bm-reason")?.value?.trim() || "";
   const { slotEl, block, isPending } = pendingDrop;
+  // The free-text reason belongs to "Extra Reason" only. The input is merely
+  // hidden for the other blocks, so it still holds whatever was typed last —
+  // never read it for a Lunch / Pre-Op / Work Finalization / Chair block.
+  const reason = block.id === "extra"
+    ? (document.getElementById("bm-reason")?.value?.trim() || "")
+    : "";
 
   // Validate: total blocks must not exceed slot duration
   const totalSlotMin  = parseInt(slotEl.dataset.slotMin, 10) || 60;

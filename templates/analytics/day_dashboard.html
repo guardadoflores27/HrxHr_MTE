@@ -76,9 +76,9 @@
         </button>
       </div>
       <div id="boards-body">
-      <div class="flex flex-col gap-1.5 max-h-[70vh] overflow-y-auto">
+      <div id="boards-list" class="flex flex-col gap-1.5 max-h-[70vh] overflow-y-auto">
         {% for p in plans %}
-        <a href="?plan={{ p.id }}{% if filters.wc %}&wc={{ filters.wc }}{% endif %}{% if filters.shift %}&shift={{ filters.shift }}{% endif %}{% if filters.date %}&date={{ filters.date }}{% endif %}{% if filters.creator %}&creator={{ filters.creator }}{% endif %}"
+        <a href="?plan={{ p.id }}{% if limit > 20 %}&limit={{ limit }}{% endif %}{% if filters.wc %}&wc={{ filters.wc }}{% endif %}{% if filters.shift %}&shift={{ filters.shift }}{% endif %}{% if filters.date %}&date={{ filters.date }}{% endif %}{% if filters.creator %}&creator={{ filters.creator }}{% endif %}"
            class="block rounded-lg border px-3 py-2 text-xs transition
                   {% if report and report.meta.plan_id == p.id %}border-blue-300 bg-blue-50{% else %}border-slate-150 hover:bg-slate-50{% endif %}">
           <p class="font-semibold text-slate-800">{{ p.work_center.name }} · {{ p.date }}</p>
@@ -154,7 +154,7 @@
 
       {# Planned vs Actual chart #}
       <div class="bg-white rounded-xl border border-slate-200 p-5">
-        <h3 class="text-sm font-semibold text-slate-700 mb-3">Planned vs Actual{% include "analytics/_info.html" with text="Planned versus actual pieces for each sub-period, so you can see which days or weeks drove the result." %} by Hour <span class="text-xs text-slate-400">(pieces)</span></h3>
+        <h3 class="text-sm font-semibold text-slate-700 mb-3">Planned vs Actual by Hour{% include "analytics/_info.html" with text="Planned versus actual pieces for each hour of the day, so you can see which hours drove the result." %} <span class="text-xs text-slate-400">(pieces)</span></h3>
         <canvas id="dayChart" height="90"></canvas>
       </div>
 
@@ -336,6 +336,38 @@ function toggleBoardsPanel() {
   let saved = "0";
   try { saved = localStorage.getItem(BOARDS_KEY) || "0"; } catch (e) {}
   applyBoardsState(saved === "1");
+})();
+</script>
+<script>
+// Keep the user's place in the Recent Boards list. Picking a board or pressing
+// "Show 5 more" reloads the page, which would otherwise reset the list to the
+// top (and the page to the top). We remember the scroll positions just before
+// leaving and put them back on the next load.
+(function () {
+  const KEY  = "dayBoardsScroll";
+  const list = document.getElementById("boards-list");
+  const body = document.getElementById("boards-body");
+  if (!list || !body) return;
+
+  body.addEventListener("click", function (e) {
+    const a = e.target.closest("a");
+    if (!a) return;
+    const more = /Show \d+ more/.test(a.textContent);
+    try {
+      sessionStorage.setItem(KEY, JSON.stringify({
+        top: list.scrollTop, height: list.scrollHeight, more: more,
+        page: window.scrollY,
+      }));
+    } catch (err) {}
+  });
+
+  let s = null;
+  try { s = JSON.parse(sessionStorage.getItem(KEY) || "null"); sessionStorage.removeItem(KEY); } catch (err) {}
+  if (!s) return;
+  // After "Show more" land with the last old row mid-view, so the new rows
+  // are right below it; after picking a board stay exactly where it was.
+  list.scrollTop = s.more ? Math.max(0, s.height - list.clientHeight / 2) : s.top;
+  window.scrollTo(0, s.page || 0);
 })();
 </script>
 {% if report %}

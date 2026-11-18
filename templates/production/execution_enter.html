@@ -89,7 +89,10 @@ input.field-error { border-color:#ef4444 !important; box-shadow:0 0 0 2px rgba(2
             </td>
 
             {# Model #}
-            <td class="px-4 py-3 font-medium text-gray-700">{{ row.hp.model.name }}</td>
+            <td class="px-4 py-3 font-medium text-gray-700">
+            {{ row.hp.model.name }}
+            {% if row.hp.comments %}<p class="mt-0.5 text-[11px] font-normal italic text-gray-500" title="Note written in the Hourly Plan"><i class="fas fa-note-sticky mr-1 text-gray-300"></i>{{ row.hp.comments }}</p>{% endif %}
+            </td>
 
             {# Planned #}
             <td class="px-4 py-3 text-right">
